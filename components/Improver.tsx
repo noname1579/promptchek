@@ -14,15 +14,13 @@ import { PromoModal } from "@/components/PromoModal";
 import { UpgradeCard } from "@/components/UpgradeCard";
 import { useGamification } from "@/lib/useGamification";
 import { useHistory } from "@/lib/useHistory";
-import { useQuota } from "@/context/QuotaProvider"; // <-- Глобальный контекст
+import { useQuota } from "@/context/QuotaProvider";
 import { cn } from "@/lib/utils";
 
 export function Improver() {
   const { showToast } = useToast();
   const { addReward } = useGamification();
   const { history, saveHistory, clearHistory } = useHistory();
-  
-  // Используем глобальный стейт квоты
   const { quota, setQuota } = useQuota(); 
 
   const [prompt, setPrompt] = useState("");
@@ -77,11 +75,11 @@ export function Improver() {
       if (!response.ok || !response.body) {
         const data = await response.json().catch(() => null);
         if (response.status === 429) {
-          if (data?.quota) setQuota(data.quota); // <-- Обновляем глобальную квоту
+          if (data?.quota) setQuota(data.quota);
           setIsPromoOpen(true);
           throw new Error("limit_reached");
         }
-        if (data?.quota) setQuota(data.quota); // <-- Обновляем глобальную квоту
+        if (data?.quota) setQuota(data.quota);
         throw new Error(data?.error ?? `Ошибка ${response.status}`);
       }
 
@@ -109,14 +107,14 @@ export function Improver() {
           try { data = JSON.parse(payload); } catch { continue; }
 
           if (event === "score") {
-            if (data.quota) setQuota(data.quota as any); // <-- Обновляем глобальную квоту
+            if (data.quota) setQuota(data.quota as any);
           } else if (event === "delta") {
             finalImproved += data.text as string;
             setImproved((prev) => prev + (data.text as string));
           } else if (event === "done") {
             const finalScore = data.scoreAfter as ScoreResult;
             setScoreAfter(finalScore);
-            if (data.quota) setQuota(data.quota as any); // <-- Обновляем глобальную квоту
+            if (data.quota) setQuota(data.quota as any);
             
             addReward(10); 
             if (finalScore.score === 100) addReward(50, "perfect_score");
@@ -293,9 +291,13 @@ ${improved}
         )}
       </div>
 
+      {/* Правая колонка: на мобильных скрываем UpgradeCard */}
       <aside className="space-y-4 w-full lg:sticky lg:top-6">
         <ScorePanel scoreBefore={scoreBefore} scoreAfter={scoreAfter} />
-        <UpgradeCard plan={quota?.plan || "free"} quotaLimit={quota?.limit || 5} />
+        
+        <div className="hidden lg:block">
+          <UpgradeCard plan={quota?.plan || "free"} quotaLimit={quota?.limit || 5} />
+        </div>
       </aside>
 
       <HistoryDrawer

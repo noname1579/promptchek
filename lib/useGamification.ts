@@ -30,15 +30,23 @@ export const ALL_ACHIEVEMENTS = [
 export function useGamification() {
   const { showToast } = useToast();
   const [state, setState] = useState<GamificationState>({ points: 0, achievements: [] });
-  const supabase = createClient();
 
   // Загрузка данных при старте
   useEffect(() => {
     async function loadData() {
-      const { data: { user } } = await supabase.auth.getUser();
+      // Безопасно создаем клиент (если ключей нет, просто выходим)
+      let supabase;
+      try {
+        supabase = createClient();
+      } catch (e) {
+        console.warn("Supabase не настроен, используем localStorage");
+        loadFromLocalStorage();
+        return;
+      }
+
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
       
       if (user) {
-        // Если авторизован - берем из базы (используем maybeSingle, чтобы избежать 406)
         const { data, error } = await supabase
           .from('profiles')
           .select('points, achievements')
@@ -47,27 +55,22 @@ export function useGamification() {
           
         if (data && !error) {
           setState({ points: data.points || 0, achievements: data.achievements || [] });
-        } else if (!data) {
-          // Если профиля нет (баг при регистрации), создаем его
-          await supabase.from('profiles').insert({
-            id: user.id,
-            email: user.email,
-            points: 0,
-            achievements: []
-          });
-          setState({ points: 0, achievements: [] });
+          return;
         }
-        return;
       }
       
-      // Если не авторизован - берем из localStorage
+      loadFromLocalStorage();
+    }
+
+    function loadFromLocalStorage() {
       try {
         const saved = localStorage.getItem(GAMIFICATION_KEY);
         if (saved) setState(JSON.parse(saved));
       } catch {}
     }
+
     loadData();
-  }, [supabase]);
+  }, []);
 
   const getLevel = useCallback(() => {
     let current = LEVELS[0];
@@ -90,17 +93,22 @@ export function useGamification() {
     const newState = { points: newPoints, achievements: newAchievements };
     setState(newState);
 
-    // Сохраняем в Supabase или в localStorage
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-      await supabase.from('profiles').update({
-        points: newPoints,
-        achievements: newAchievements
-      }).eq('id', user.id);
-    } else {
+    try {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        await supabase.from('profiles').update({
+          points: newPoints,
+          achievements: newAchievements
+        }).eq('id', user.id);
+      } else {
+        localStorage.setItem(GAMIFICATION_KEY, JSON.stringify(newState));
+      }
+    } catch {
+      // Если Supabase недоступен, сохраняем локально
       localStorage.setItem(GAMIFICATION_KEY, JSON.stringify(newState));
     }
-  }, [state, showToast, supabase]);
+  }, [state, showToast]);
 
   return { points: state.points, achievements: state.achievements, level: getLevel(), addReward };
 }

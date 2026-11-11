@@ -4,22 +4,20 @@ import { Globe, Send, Crown } from "lucide-react";
 import Link from "next/link";
 import { ProfileBadge } from "@/components/ProfileBadge";
 import { AuthButton } from "@/components/AuthButton";
-import { QuotaBadge } from "@/components/QuotaBadge"; // <-- Импорт
+import { QuotaBadge } from "@/components/QuotaBadge";
 
 export default function Home() {
   return (
     <div className="relative min-h-screen flex flex-col">
-      <div className="flex-1 max-w-6xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-12 sm:py-20">
+      <div className="flex-1 max-w-6xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8 sm:py-20">
         
         {/* Хедер страницы */}
         <div className="mb-12 sm:text-left text-center relative">
           
-          {/* Бейджи в правом верхнем углу */}
-          <div className="absolute top-0 right-0 hidden sm:flex items-center gap-3">
-            {/* Индикатор лимитов */}
+          {/* Бейджи: на ПК справа сверху, на телефоне - по центру под текстом */}
+          <div className="flex flex-wrap items-center justify-center sm:absolute sm:top-0 sm:right-0 sm:justify-end gap-2 sm:gap-3 mb-6 sm:mb-0">
             <QuotaBadge />
-
-            {/* Кнопка перехода на тарифы */}
+            
             <Link 
               href="/pricing"
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-400 text-sm font-medium hover:bg-amber-500/20 transition-all shadow-sm"
@@ -33,7 +31,7 @@ export default function Home() {
           </div>
 
           {/* Логотип и название в шапке */}
-          <div className="inline-flex items-center gap-3 mb-6 bg-slate-900/50 border border-slate-800 rounded-2xl px-4 py-2 shadow-sm">
+          <div className="inline-flex items-center gap-3 mb-6 bg-slate-900/50 border border-slate-800 rounded-2xl px-4 py-2 shadow-sm mt-4 sm:mt-0">
             <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-xl">
               <svg width="32" height="32" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <rect width="40" height="40" rx="12" fill="#0f172a"/>
@@ -48,14 +46,14 @@ export default function Home() {
             </span>
           </div>
 
-          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-white mb-6">
+          <h1 className="text-3xl sm:text-4xl lg:text-6xl font-bold tracking-tight text-white mb-4 sm:mb-6">
             Промпты, которые дают <br className="hidden sm:block" />
             <span className="bg-gradient-to-r from-indigo-400 via-purple-400 to-fuchsia-400 bg-clip-text text-transparent">
               предсказуемый результат
             </span>
           </h1>
           
-          <p className="text-slate-400 text-lg max-w-2xl leading-relaxed">
+          <p className="text-slate-400 text-base sm:text-lg max-w-2xl leading-relaxed mx-auto sm:mx-0">
             Вставьте промпт — получите разбор по 12 критериям, оценку 0-100 и переписанную версию. Без воды и общих советов.
           </p>
         </div>
@@ -65,7 +63,7 @@ export default function Home() {
 
       {/* Футер */}
       <footer className="border-t border-slate-800/50 mt-auto">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col sm:flex-row items-center justify-between gap-6">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 flex flex-col sm:flex-row items-center justify-between gap-4 sm:gap-6">
           
           <div className="flex items-center gap-2.5">
             <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-md opacity-80">
@@ -99,7 +97,6 @@ export default function Home() {
               </a>
             </div>
           </div>
-
         </div>
       </footer>
     </div>
