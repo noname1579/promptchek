@@ -6,16 +6,15 @@ export interface ScoreCriterion {
   id: string;
   label: string;
   passed: boolean;
-  // Добавляем необязательные поля, которые ожидает scoring.ts
-  weight?: number; 
+  weight?: number;
   hint?: string;
 }
 
 export interface ScoreResult {
   score: number;
   criteria: ScoreCriterion[];
-  // Добавляем необязательное поле, которое ожидает scoring.ts
   strengths?: string[];
+  gaps?: string[]; // Добавляем, так как scoring.ts использует это поле
 }
 
 export interface HistoryItem {
