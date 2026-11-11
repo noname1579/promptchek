@@ -1,28 +1,21 @@
+// lib/types.ts
 export type PromptMode = "general" | "code" | "agent" | "system";
-
-export interface ImproveRequest {
-  prompt: string;
-  mode: PromptMode;
-}
 
 export interface ScoreCriterion {
   id: string;
   label: string;
-  weight: number;
   passed: boolean;
-  hint: string;
 }
 
 export interface ScoreResult {
   score: number;
   criteria: ScoreCriterion[];
-  strengths: string[];
-  gaps: string[];
 }
 
-export interface ImproveResult {
+export interface HistoryItem {
+  id: string;
+  prompt: string;
   improved: string;
-  scoreBefore: ScoreResult;
-  scoreAfter: ScoreResult;
-  notes: string[];
+  mode: PromptMode;
+  timestamp: number;
 }

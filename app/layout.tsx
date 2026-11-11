@@ -1,51 +1,43 @@
-import type { Metadata } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
+import type { Metadata, Viewport } from "next";
+import { Inter } from "next/font/google";
 import "./globals.css";
-import { AnalyticsProvider } from "@/components/analytics/AnalyticsProvider";
+import { AppProvider } from "@/context/AppProvider";
+import { AppShell } from "@/components/layout/AppShell";
+import { ToastProvider } from "@/components/ui/ToastProvider";
+import { validateEnv } from "@/lib/env";
 
-const inter = Inter({
-  subsets: ["latin", "cyrillic"],
-  variable: "--font-inter",
-  display: "swap",
-});
+validateEnv();
 
-const jetbrains = JetBrains_Mono({
-  subsets: ["latin", "cyrillic"],
-  variable: "--font-jetbrains",
-  display: "swap",
-});
+const inter = Inter({ subsets: ["latin", "cyrillic"], variable: "--font-inter" });
 
 export const metadata: Metadata = {
-  title: "Promptchek — профессиональные промпты для ИИ",
-  description:
-    "Разбор промпта по 12 критериям, оценка 0-100 и улучшенная версия за один прогон.",
-  icons: {
-    icon: "/favicon.svg",
-    shortcut: "/favicon.svg",
-    apple: "/favicon.svg",
+  title: "Promptchek — платформа точных AI-промптов",
+  description: "Улучшайте промпты, получайте оценку по 12 критериям и добивайтесь предсказуемого результата от нейросетей.",
+  openGraph: {
+    title: "Promptchek",
+    description: "Платформа для улучшения и оценки AI-промптов.",
+    type: "website",
   },
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{ children: React.ReactNode }>) {
+// ✅ Правильный viewport для всех устройств (чтобы не было горизонтального скролла)
+export const viewport: Viewport = {
+  themeColor: "#020617",
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false, // Отключает случайный зум на iPhone
+};
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="ru" className={`${inter.variable} ${jetbrains.variable}`}>
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link
-          rel="preconnect"
-          href="https://fonts.gstatic.com"
-          crossOrigin="anonymous"
-        />
-        <link
-          rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
-        />
-      </head>
-      <body>
-        {children}
-        <AnalyticsProvider />
+    <html lang="ru" className={`dark ${inter.variable}`}>
+      <body className="font-sans antialiased bg-slate-950 text-slate-100 overflow-x-hidden">
+        <AppProvider>
+          <ToastProvider>
+            <AppShell>{children}</AppShell>
+          </ToastProvider>
+        </AppProvider>
       </body>
     </html>
   );

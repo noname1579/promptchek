@@ -1,68 +1,23 @@
-/**
- * app/api/share/route.ts
- * POST endpoint для создания публичной ссылки на промпт.
- * Возвращает { slug, url: /share/${slug} }.
- * Зависимости: lib/store (saveSharedTemplate).
- */
+// app/api/share/route.ts
+import { NextResponse } from "next/server";
+import { saveSharedPrompt, generateSlug } from "@/lib/share-store";
 
-import { NextRequest, NextResponse } from "next/server";
-import { saveSharedTemplate } from "@/lib/store";
-import { trackServer } from "@/lib/analytics-server";
-
-export const runtime = "nodejs";
-
-export async function POST(request: NextRequest) {
-  let body: unknown;
+export async function POST(req: Request) {
   try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ error: "Некорректный JSON" }, { status: 400 });
-  }
+    const { title, prompt, mode } = await req.json();
 
-  const { title, prompt, mode } = (body ?? {}) as {
-    title?: unknown;
-    prompt?: unknown;
-    mode?: unknown;
-  };
+    if (!prompt) {
+      return NextResponse.json({ error: "Нет текста" }, { status: 400 });
+    }
 
-  if (typeof prompt !== "string" || prompt.trim().length < 10) {
-    return NextResponse.json(
-      { error: "Промпт должен содержать минимум 10 символов" },
-      { status: 400 },
-    );
-  }
+    const slug = generateSlug();
+    await saveSharedPrompt(slug, { title, prompt, mode, createdAt: Date.now() });
 
-  try {
-    const slug = await saveSharedTemplate({
-      title: (title as string) ?? "Shared Prompt",
-      prompt: prompt.trim(),
-      mode: (mode as string) ?? "general",
-      createdAt: Date.now(),
-    });
-
-    // Получаем origin из запроса
-    const origin = request.headers.get("x-forwarded-host") ??
-      request.headers.get("host") ??
-      "localhost:3000";
-    const protocol = request.headers.get("x-forwarded-proto") ?? "http";
-
-    // Analytics
-    const ip =
-      request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
-    trackServer(ip, "share_link_created", {
-      mode,
-    });
-
-    return NextResponse.json({
-      slug,
-      url: `${protocol}://${origin}/share/${slug}`,
-    });
+    const host = req.headers.get("host") || "localhost:3000";
+    const protocol = host.includes("localhost") ? "http" : "https";
+    
+    return NextResponse.json({ url: `${protocol}://${host}/share/${slug}` });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Ошибка сохранения";
-    console.error("[share] Store error:", message);
-    return NextResponse.json(
-      { error: message },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: "Ошибка сервера" }, { status: 500 });
   }
 }
