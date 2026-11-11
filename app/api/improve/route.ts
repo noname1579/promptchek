@@ -1,11 +1,12 @@
 import { getGigaChatClient, hasGigaChatKey } from "@/lib/llm-client";
 import { scorePrompt } from "@/lib/scoring";
 import { checkRateLimit, sanitizePrompt } from "@/lib/security";
-export const maxDuration = 60; // Увеличиваем лимит до 60 секунд (максимум для Hobby)
 
 // Хранилище дневных квот (в памяти)
 const quotaStore = new Map<string, { count: number; resetAt: number }>();
 const DAILY_LIMIT = 5;
+
+export const maxDuration = 60; // Для Vercel
 
 export async function POST(req: Request) {
   try {
@@ -46,11 +47,14 @@ export async function POST(req: Request) {
 
     // 5. ПРОВЕРКА ДНЕВНОГО ЛИМИТА (КВОТЫ)
     const now = Date.now();
-    const userQuota = quotaStore.get(ip);
+    let userQuota = quotaStore.get(ip);
 
+    // Если лимита нет или он истек — создаем новый
     if (!userQuota || now > userQuota.resetAt) {
-      quotaStore.set(ip, { count: 1, resetAt: now + 24 * 60 * 60 * 1000 });
+      userQuota = { count: 1, resetAt: now + 24 * 60 * 60 * 1000 };
+      quotaStore.set(ip, userQuota);
     } else {
+      // Если лимит есть, проверяем, не исчерпан ли он
       if (userQuota.count >= DAILY_LIMIT) {
         return new Response(
           JSON.stringify({ 
@@ -60,10 +64,12 @@ export async function POST(req: Request) {
           { status: 429, headers: { "Content-Type": "application/json" } }
         );
       }
+      // Увеличиваем счетчик
       userQuota.count += 1;
       quotaStore.set(ip, userQuota);
     }
 
+    // Теперь TypeScript точно знает, что userQuota не undefined
     const currentQuotaInfo = {
       used: userQuota.count,
       limit: DAILY_LIMIT,
