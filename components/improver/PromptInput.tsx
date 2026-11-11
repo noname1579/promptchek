@@ -1,3 +1,4 @@
+// components/improver/PromptInput.tsx
 "use client";
 
 import { RefreshCw, Sparkles } from "lucide-react";
@@ -33,7 +34,6 @@ interface Props {
 export function PromptInput({ prompt, setPrompt, mode, setMode, isRunning, quota, run }: Props) {
   return (
     <div className="space-y-4 sm:space-y-5">
-      {/* Режимы (на мобильных скроллятся горизонтально, если не влезают) */}
       <div className="flex flex-wrap sm:flex-nowrap gap-2 overflow-x-auto scrollbar-thin pb-1 -mx-1 px-1">
         {MODES.map((m) => (
           <button
@@ -52,7 +52,6 @@ export function PromptInput({ prompt, setPrompt, mode, setMode, isRunning, quota
         ))}
       </div>
 
-      {/* Поле ввода */}
       <div className="rounded-2xl border border-slate-800 bg-slate-900/50 backdrop-blur-xl overflow-hidden focus-within:border-indigo-500/50 focus-within:ring-1 focus-within:ring-indigo-500/50 transition-all">
         <textarea
           value={prompt}
@@ -62,8 +61,6 @@ export function PromptInput({ prompt, setPrompt, mode, setMode, isRunning, quota
           maxLength={8000}
           className="w-full resize-y bg-transparent p-4 sm:p-5 font-mono text-sm leading-relaxed text-slate-200 outline-none placeholder:text-slate-600"
         />
-        
-        {/* Панель инструментов под textarea (на мобильных переносим кнопки вниз) */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t border-slate-800/80 bg-slate-950/30 px-4 py-3">
           <button
             onClick={() => setPrompt(EXAMPLES[mode])}

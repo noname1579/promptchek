@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { scorePrompt } from "@/lib/scoring";
 import type { PromptMode, ScoreResult, HistoryItem } from "@/lib/types";
-import { Share2, Sparkles, Copy, Check, Square, Zap, History, Clock } from "lucide-react";
+import { Share2, Sparkles, Copy, Check, Square, Zap, History, Download } from "lucide-react";
 import { trackEvent } from "@/lib/analytics-client";
 import { useToast } from "@/components/ui/ToastProvider";
 import { PromptInput } from "@/components/improver/PromptInput";
@@ -178,13 +178,54 @@ export function Improver() {
     }
   };
 
+  const downloadMarkdown = () => {
+    if (!improved) return;
+    
+    const date = new Date().toLocaleString("ru-RU");
+    const mdContent = `# Promptchek — Улучшенный промпт
+    
+**Дата:** ${date}
+**Режим:** ${mode}
+**Оценка до:** ${scoreBefore?.score || 0}/100
+**Оценка после:** ${scoreAfter?.score || 0}/100
+
+---
+
+## Исходный промпт
+
+\`\`\`text
+${prompt}
+\`\`\`
+
+---
+
+## Улучшенный промпт
+
+\`\`\`text
+${improved}
+\`\`\`
+
+---
+*Сгенерировано в Promptchek*
+`;
+
+    const blob = new Blob([mdContent], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `prompt-${Date.now()}.md`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast("Файл .md скачан");
+  };
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6 lg:gap-8 items-start">
       
-      {/* ЛЕВАЯ КОЛОНКА */}
       <div className="space-y-4 sm:space-y-5">
         
-        {/* Стильная шапка с кнопкой истории */}
         <div className="flex items-center justify-between pb-2">
           <div className="flex items-center gap-2 text-slate-400">
             <Sparkles className="w-4 h-4 text-indigo-500" />
@@ -243,6 +284,9 @@ export function Improver() {
                 <button onClick={copy} disabled={!improved} className="text-xs font-medium text-slate-400 hover:text-white disabled:opacity-40 transition-colors flex items-center gap-1.5">
                   {copied ? <><Check className="w-3.5 h-3.5 text-emerald-400" /> Скопировано</> : <><Copy className="w-3.5 h-3.5" /> Копировать</>}
                 </button>
+                <button onClick={downloadMarkdown} disabled={!improved} className="text-xs font-medium text-slate-400 hover:text-white disabled:opacity-40 transition-colors flex items-center gap-1.5">
+                  <Download className="w-3.5 h-3.5" /> Скачать
+                </button>
                 <button onClick={share} disabled={!improved} className="text-xs font-medium text-slate-400 hover:text-white disabled:opacity-40 transition-colors flex items-center gap-1.5">
                   <Share2 className="w-3.5 h-3.5" /> {shareLink ? "Ссылка!" : "Поделиться"}
                 </button>
@@ -271,7 +315,6 @@ export function Improver() {
         )}
       </div>
 
-      {/* ПРАВАЯ КОЛОНКА */}
       <aside className="w-full lg:sticky lg:top-6">
         <ScorePanel scoreBefore={scoreBefore} scoreAfter={scoreAfter} />
       </aside>

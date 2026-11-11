@@ -12,14 +12,9 @@ export default function manifest(): MetadataRoute.Manifest {
     theme_color: "#020617",
     icons: [
       {
-        src: "/icon-192x192.png", // Убедитесь, что эти картинки лежат в папке public
-        sizes: "192x192",
-        type: "image/png",
-      },
-      {
-        src: "/icon-512x512.png",
-        sizes: "512x512",
-        type: "image/png",
+        src: "/icon.svg", // Используем SVG, который мы создали в папке app
+        sizes: "any",
+        type: "image/svg+xml",
       },
     ],
   };
