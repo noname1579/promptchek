@@ -1,20 +1,19 @@
+// app/api/improve/route.ts
 import { getGigaChatClient, hasGigaChatKey } from "@/lib/llm-client";
 import { scorePrompt } from "@/lib/scoring";
 import { checkRateLimit, sanitizePrompt } from "@/lib/security";
+import { createClient } from "@/lib/supabase/server";
+import { quotaStore, FREE_LIMIT, PRO_LIMIT, PRO_PLUS_LIMIT } from "@/lib/quota-store"; // <-- Импорт
 
-// Хранилище дневных квот (в памяти)
-const quotaStore = new Map<string, { count: number; resetAt: number }>();
-const DAILY_LIMIT = 5;
-
-export const maxDuration = 60; // Для Vercel
+export const maxDuration = 60;
 
 export async function POST(req: Request) {
   try {
-    // 1. Получаем IP
     const ip = req.headers.get("x-forwarded-for") || "anonymous";
+    
+    // Лимит для защиты от спама (запросов в минуту)
+    const isAllowed = checkRateLimit(ip, process.env.NODE_ENV === "development" ? 50 : 5, 60000);
 
-    // 2. Защита от спама (Rate Limit): не более 5 запросов в минуту с одного IP
-    const isAllowed = checkRateLimit(ip, 5, 60000);
     if (!isAllowed) {
       return new Response(
         JSON.stringify({ error: "Слишком много запросов. Подождите минуту и попробуйте снова." }),
@@ -22,62 +21,75 @@ export async function POST(req: Request) {
       );
     }
 
-    // 3. Валидация данных
     const body = await req.json().catch(() => null);
-    if (!body) {
-      return new Response(JSON.stringify({ error: "Неверный формат запроса" }), { status: 400 });
-    }
+    if (!body) return new Response(JSON.stringify({ error: "Неверный формат запроса" }), { status: 400 });
 
     const safePrompt = sanitizePrompt(body.prompt);
     const mode = typeof body.mode === "string" ? body.mode : "general";
 
     if (!safePrompt) {
-      return new Response(
-        JSON.stringify({ error: "Текст должен быть от 10 до 8000 символов." }), 
-        { status: 400, headers: { "Content-Type": "application/json" } }
-      );
+      return new Response(JSON.stringify({ error: "Текст должен быть от 10 до 8000 символов." }), 
+        { status: 400, headers: { "Content-Type": "application/json" } });
     }
 
-    // 4. Проверка наличия ключа LLM
     if (!hasGigaChatKey()) {
       return new Response(JSON.stringify({ error: "LLM ключ не настроен" }), { 
-        status: 500, headers: { "Content-Type": "application/json" } 
-      });
+        status: 500, headers: { "Content-Type": "application/json" } });
     }
 
-    // 5. ПРОВЕРКА ДНЕВНОГО ЛИМИТА (КВОТЫ)
-    const now = Date.now();
-    let userQuota = quotaStore.get(ip);
+    // --- ПРОВЕРКА ПОДПИСКИ ---
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    let currentLimit = FREE_LIMIT;
+    let planName = "free";
 
-    // Если лимита нет или он истек — создаем новый
+    if (user) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('plan, plan_expires_at')
+        .eq('id', user.id)
+        .maybeSingle();
+        
+      if (profile) {
+        const isExpired = profile.plan_expires_at && new Date(profile.plan_expires_at) < new Date();
+        if (!isExpired && profile.plan !== 'free') {
+          planName = profile.plan;
+          currentLimit = profile.plan === 'pro' ? PRO_LIMIT : PRO_PLUS_LIMIT;
+        }
+      }
+    }
+
+    // --- ПРОВЕРКА ДНЕВНОГО ЛИМИТА ---
+    const now = Date.now();
+    let userQuota = quotaStore.get(ip); // <-- Берем из общего хранилища
+
     if (!userQuota || now > userQuota.resetAt) {
       userQuota = { count: 1, resetAt: now + 24 * 60 * 60 * 1000 };
       quotaStore.set(ip, userQuota);
     } else {
-      // Если лимит есть, проверяем, не исчерпан ли он
-      if (userQuota.count >= DAILY_LIMIT) {
+      if (userQuota.count >= currentLimit) {
         return new Response(
           JSON.stringify({ 
-            error: `Достигнут дневной лимит (${DAILY_LIMIT} запросов). Попробуйте завтра.`,
-            quota: { used: userQuota.count, limit: DAILY_LIMIT, remaining: 0, disabled: true }
+            error: "limit_reached",
+            message: `Достигнут дневной лимит (${currentLimit} запросов). Попробуйте завтра или активируйте Pro.`,
+            quota: { used: userQuota.count, limit: currentLimit, remaining: 0, disabled: true }
           }), 
           { status: 429, headers: { "Content-Type": "application/json" } }
         );
       }
-      // Увеличиваем счетчик
       userQuota.count += 1;
       quotaStore.set(ip, userQuota);
     }
 
-    // Теперь TypeScript точно знает, что userQuota не undefined
     const currentQuotaInfo = {
       used: userQuota.count,
-      limit: DAILY_LIMIT,
-      remaining: Math.max(0, DAILY_LIMIT - userQuota.count),
-      disabled: false
+      limit: currentLimit,
+      remaining: Math.max(0, currentLimit - userQuota.count),
+      disabled: false,
+      plan: planName
     };
 
-    // 6. ОТПРАВКА ЗАПРОСА В GIGACHAT
     const client = getGigaChatClient();
     const scoreBefore = scorePrompt(safePrompt, mode as any);
 
@@ -113,7 +125,6 @@ export async function POST(req: Request) {
           })}\n\n`));
           
         } catch (err) {
-          console.error("GigaChat Stream Error:", err);
           controller.enqueue(encoder.encode(`event: error\ndata: ${JSON.stringify({ message: (err as Error).message })}\n\n`));
         } finally {
           controller.close();

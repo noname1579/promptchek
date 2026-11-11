@@ -1,7 +1,8 @@
 // components/improver/PromptInput.tsx
 "use client";
 
-import { RefreshCw, Sparkles } from "lucide-react";
+import { RefreshCw, Sparkles, Zap } from "lucide-react";
+import Link from "next/link";
 import { MODE_LABELS, MODE_HINTS } from "@/lib/modes";
 import type { PromptMode } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -32,6 +33,8 @@ interface Props {
 }
 
 export function PromptInput({ prompt, setPrompt, mode, setMode, isRunning, quota, run }: Props) {
+  const isLimitReached = quota?.remaining === 0;
+
   return (
     <div className="space-y-4 sm:space-y-5">
       <div className="flex flex-wrap sm:flex-nowrap gap-2 overflow-x-auto scrollbar-thin pb-1 -mx-1 px-1">
@@ -85,19 +88,28 @@ export function PromptInput({ prompt, setPrompt, mode, setMode, isRunning, quota
               <span className="text-[11px] sm:text-xs text-slate-600 font-mono">{prompt.length}/8000</span>
             </div>
             
-            <button
-              onClick={run}
-              disabled={isRunning || prompt.trim().length < 10 || quota?.remaining === 0}
-              className="rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 px-4 sm:px-5 py-2 sm:py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-500/25 transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 flex items-center gap-2 min-h-[40px]"
-            >
-              {quota?.remaining === 0 ? (
-                "Лимит"
-              ) : isRunning ? (
-                <><RefreshCw className="w-4 h-4 animate-spin" /> <span className="hidden sm:inline">Улучшаю…</span></>
-              ) : (
-                <><Sparkles className="w-4 h-4" /> <span className="hidden sm:inline">Улучшить</span></>
-              )}
-            </button>
+            {/* Если лимит исчерпан, показываем кнопку "Купить Pro" вместо "Улучшить" */}
+            {isLimitReached ? (
+              <Link
+                href="/pricing"
+                className="rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 px-4 sm:px-5 py-2 sm:py-2.5 text-sm font-semibold text-white shadow-lg shadow-amber-500/25 transition-all hover:brightness-110 flex items-center gap-2 min-h-[40px]"
+              >
+                <Zap className="w-4 h-4" />
+                <span className="hidden sm:inline">Купить Pro</span>
+              </Link>
+            ) : (
+              <button
+                onClick={run}
+                disabled={isRunning || prompt.trim().length < 10}
+                className="rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 px-4 sm:px-5 py-2 sm:py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-500/25 transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 flex items-center gap-2 min-h-[40px]"
+              >
+                {isRunning ? (
+                  <><RefreshCw className="w-4 h-4 animate-spin" /> <span className="hidden sm:inline">Улучшаю…</span></>
+                ) : (
+                  <><Sparkles className="w-4 h-4" /> <span className="hidden sm:inline">Улучшить</span></>
+                )}
+              </button>
+            )}
           </div>
         </div>
       </div>

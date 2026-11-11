@@ -1,125 +1,72 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { useEffect, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
+import { User } from "@supabase/supabase-js";
+import { LogIn, LogOut, User as UserIcon } from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 
-interface AuthUser {
-  email: string | null;
-}
-
-/**
- * Кнопка входа/выхода. Если Supabase не настроен — ничего не рендерит,
- * чтобы локальная разработка не требовала ключей.
- */
 export function AuthButton() {
-  const [user, setUser] = useState<AuthUser | null>(null);
-  const [email, setEmail] = useState("");
-  const [sent, setSent] = useState(false);
-  const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const configured = Boolean(
-    process.env.NEXT_PUBLIC_SUPABASE_URL &&
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-  );
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+  const supabase = createClient();
+  const router = useRouter();
 
   useEffect(() => {
-    if (!configured) return;
-    const supabase = createSupabaseBrowserClient();
-
-    supabase.auth.getUser().then(({ data }) => {
-      setUser(data.user ? { email: data.user.email ?? null } : null);
+    // Проверяем текущую сессию
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      setUser(user);
+      setLoading(false);
     });
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ? { email: session.user.email ?? null } : null);
-    });
-
-    return () => sub.subscription.unsubscribe();
-  }, [configured]);
-
-  const signIn = useCallback(async () => {
-    if (!email.includes("@")) {
-      setError("Введите корректный email");
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    const supabase = createSupabaseBrowserClient();
-    const { error: authError } = await supabase.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
-    });
-    setBusy(false);
-    if (authError) {
-      setError(authError.message);
-      return;
-    }
-    setSent(true);
-  }, [email]);
-
-  const signOut = useCallback(async () => {
-    const supabase = createSupabaseBrowserClient();
-    await supabase.auth.signOut();
-    setUser(null);
-  }, []);
-
-  if (!configured) return null;
-
-  if (user) {
-    return (
-      <div className="flex items-center gap-3 text-sm">
-        <span className="text-muted">{user.email}</span>
-        <button
-          type="button"
-          onClick={signOut}
-          className="rounded-lg border border-line px-3 py-1.5 text-muted transition hover:border-muted hover:text-white"
-        >
-          Выйти
-        </button>
-      </div>
+    // Слушаем изменения (вход/выход)
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        setUser(session?.user ?? null);
+        router.refresh(); // Обновляем серверные компоненты
+      }
     );
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
+  }, [supabase, router]);
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.refresh();
+  };
+
+  if (loading) {
+    return <div className="w-20 h-8 bg-slate-800 animate-pulse rounded-lg" />;
   }
 
-  if (!open) {
+  if (!user) {
     return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="rounded-lg border border-line px-3 py-1.5 text-sm text-muted transition hover:border-muted hover:text-white"
+      <Link
+        href="/login"
+        className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800 text-sm font-medium text-white hover:bg-slate-700 transition-colors"
       >
+        <LogIn className="w-4 h-4" />
         Войти
-      </button>
+      </Link>
     );
   }
 
   return (
-    <div className="flex flex-col items-end gap-2">
-      {sent ? (
-        <p className="max-w-xs text-right text-sm text-good">
-          Ссылка для входа отправлена на {email}
-        </p>
-      ) : (
-        <div className="flex items-center gap-2">
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@example.com"
-            className="w-48 rounded-lg border border-line bg-ink-soft px-3 py-1.5 text-sm outline-none focus:border-accent"
-          />
-          <button
-            type="button"
-            onClick={signIn}
-            disabled={busy}
-            className="rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-white transition hover:brightness-110 disabled:opacity-40"
-          >
-            {busy ? "…" : "Отправить"}
-          </button>
-        </div>
-      )}
-      {error && <p className="text-xs text-bad">{error}</p>}
+    <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800/50 border border-slate-700">
+        <UserIcon className="w-4 h-4 text-indigo-400" />
+        <span className="text-sm text-slate-200">{user.email?.split("@")[0]}</span>
+      </div>
+      <button
+        onClick={handleLogout}
+        className="p-2 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-800/50 transition-colors"
+        title="Выйти"
+      >
+        <LogOut className="w-4 h-4" />
+      </button>
     </div>
   );
 }

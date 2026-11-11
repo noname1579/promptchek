@@ -3,26 +3,28 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { scorePrompt } from "@/lib/scoring";
-import type { PromptMode, ScoreResult, HistoryItem } from "@/lib/types";
+import type { PromptMode, ScoreResult } from "@/lib/types";
 import { Share2, Sparkles, Copy, Check, Square, Zap, History, Download } from "lucide-react";
 import { trackEvent } from "@/lib/analytics-client";
 import { useToast } from "@/components/ui/ToastProvider";
 import { PromptInput } from "@/components/improver/PromptInput";
 import { ScorePanel } from "@/components/improver/ScorePanel";
 import { HistoryDrawer } from "@/components/improver/HistoryDrawer";
+import { PromoModal } from "@/components/PromoModal";
+import { UpgradeCard } from "@/components/UpgradeCard";
+import { useGamification } from "@/lib/useGamification";
+import { useHistory } from "@/lib/useHistory";
+import { useQuota } from "@/context/QuotaProvider"; // <-- Глобальный контекст
 import { cn } from "@/lib/utils";
-
-interface QuotaInfo {
-  used: number;
-  limit: number;
-  remaining: number;
-  disabled?: boolean;
-}
-
-const HISTORY_KEY = "promptchek_history";
 
 export function Improver() {
   const { showToast } = useToast();
+  const { addReward } = useGamification();
+  const { history, saveHistory, clearHistory } = useHistory();
+  
+  // Используем глобальный стейт квоты
+  const { quota, setQuota } = useQuota(); 
+
   const [prompt, setPrompt] = useState("");
   const [mode, setMode] = useState<PromptMode>("general");
   const [improved, setImproved] = useState("");
@@ -33,50 +35,26 @@ export function Improver() {
   const [copied, setCopied] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
   const [shareLink, setShareLink] = useState<string | null>(null);
-  const [quota, setQuota] = useState<QuotaInfo | null>(null);
   
-  const [history, setHistory] = useState<HistoryItem[]>([]);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [isPromoOpen, setIsPromoOpen] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(HISTORY_KEY);
-      if (saved) setHistory(JSON.parse(saved));
-    } catch {}
-  }, []);
-
-  const saveHistory = (item: Omit<HistoryItem, "id" | "timestamp">) => {
-    const newItem: HistoryItem = {
-      ...item,
-      id: Date.now().toString(),
-      timestamp: Date.now(),
-    };
-    const updated = [newItem, ...history].slice(0, 10);
-    setHistory(updated);
-    try {
-      localStorage.setItem(HISTORY_KEY, JSON.stringify(updated));
-    } catch {}
-  };
-
-  const clearHistory = () => {
-    setHistory([]);
-    localStorage.removeItem(HISTORY_KEY);
-    showToast("История очищена");
-  };
-
-  useEffect(() => {
     const trimmed = prompt.trim();
-    if (trimmed.length >= 10) {
-      setScoreBefore(scorePrompt(trimmed, mode));
-    } else {
-      setScoreBefore(null);
-    }
+    if (trimmed.length >= 10) setScoreBefore(scorePrompt(trimmed, mode));
+    else setScoreBefore(null);
   }, [prompt, mode]);
 
   const run = useCallback(async () => {
-    if (isRunning || prompt.trim().length < 10 || quota?.remaining === 0) return;
+    if (isRunning || prompt.trim().length < 10) return;
+    
+    if (quota?.remaining === 0) {
+      setIsPromoOpen(true);
+      return;
+    }
+
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -98,7 +76,12 @@ export function Improver() {
 
       if (!response.ok || !response.body) {
         const data = await response.json().catch(() => null);
-        if (data?.quota) setQuota(data.quota);
+        if (response.status === 429) {
+          if (data?.quota) setQuota(data.quota); // <-- Обновляем глобальную квоту
+          setIsPromoOpen(true);
+          throw new Error("limit_reached");
+        }
+        if (data?.quota) setQuota(data.quota); // <-- Обновляем глобальную квоту
         throw new Error(data?.error ?? `Ошибка ${response.status}`);
       }
 
@@ -126,15 +109,20 @@ export function Improver() {
           try { data = JSON.parse(payload); } catch { continue; }
 
           if (event === "score") {
-            if (data.quota) setQuota(data.quota as QuotaInfo);
+            if (data.quota) setQuota(data.quota as any); // <-- Обновляем глобальную квоту
           } else if (event === "delta") {
             finalImproved += data.text as string;
             setImproved((prev) => prev + (data.text as string));
           } else if (event === "done") {
-            setScoreAfter(data.scoreAfter as ScoreResult);
-            if (data.quota) setQuota(data.quota as QuotaInfo);
-            trackEvent("prompt_generated", { category: mode, scoreBefore: scoreBefore?.score, scoreAfter: (data.scoreAfter as ScoreResult).score });
-            saveHistory({ prompt, improved: finalImproved, mode });
+            const finalScore = data.scoreAfter as ScoreResult;
+            setScoreAfter(finalScore);
+            if (data.quota) setQuota(data.quota as any); // <-- Обновляем глобальную квоту
+            
+            addReward(10); 
+            if (finalScore.score === 100) addReward(50, "perfect_score");
+            if (mode === "code") addReward(5, "code_master");
+            
+            await saveHistory({ prompt, improved: finalImproved, mode });
           } else if (event === "error") {
             setError(data.message as string);
             showToast(data.message as string, "error");
@@ -142,7 +130,7 @@ export function Improver() {
         }
       }
     } catch (err) {
-      if ((err as Error).name !== "AbortError") {
+      if ((err as Error).name !== "AbortError" && (err as Error).message !== "limit_reached") {
         const msg = err instanceof Error ? err.message : "Ошибка";
         setError(msg);
         showToast(msg, "error");
@@ -151,7 +139,7 @@ export function Improver() {
       setIsRunning(false);
       setIsStreaming(false);
     }
-  }, [isRunning, mode, prompt, scoreBefore, quota, showToast]);
+  }, [isRunning, mode, prompt, quota, showToast, addReward, saveHistory, setQuota]);
 
   const copy = async () => {
     await navigator.clipboard.writeText(improved);
@@ -180,7 +168,6 @@ export function Improver() {
 
   const downloadMarkdown = () => {
     if (!improved) return;
-    
     const date = new Date().toLocaleString("ru-RU");
     const mdContent = `# Promptchek — Улучшенный промпт
     
@@ -208,7 +195,6 @@ ${improved}
 ---
 *Сгенерировано в Promptchek*
 `;
-
     const blob = new Blob([mdContent], { type: "text/markdown;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -236,9 +222,7 @@ ${improved}
             onClick={() => setIsHistoryOpen(true)}
             className={cn(
               "group flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm font-medium transition-all duration-200",
-              history.length > 0 
-                ? "border-slate-700 bg-slate-800/50 text-slate-200 hover:border-indigo-500/50 hover:bg-slate-800" 
-                : "border-slate-800/50 bg-transparent text-slate-500 hover:text-slate-300"
+              history.length > 0 ? "border-slate-700 bg-slate-800/50 text-slate-200 hover:border-indigo-500/50 hover:bg-slate-800" : "border-slate-800/50 bg-transparent text-slate-500 hover:text-slate-300"
             )}
           >
             <History className="w-4 h-4 text-indigo-400 group-hover:scale-110 transition-transform" />
@@ -268,12 +252,6 @@ ${improved}
           </div>
         )}
 
-        {quota?.remaining === 0 && !error && (
-          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-300 flex items-center gap-2 animate-slide-up">
-            <span>Вы использовали все {quota.limit} бесплатных запросов на сегодня. Лимит обновится через 24 часа.</span>
-          </div>
-        )}
-
         {(improved || isRunning) && (
           <div className="rounded-2xl border border-slate-800 bg-slate-900/50 backdrop-blur-xl overflow-hidden animate-fade-in shadow-2xl shadow-indigo-500/5">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 px-4 sm:px-5 py-3 bg-slate-950/30">
@@ -299,7 +277,7 @@ ${improved}
             </div>
             <pre className="max-h-[420px] overflow-auto whitespace-pre-wrap p-4 sm:p-5 font-mono text-sm leading-relaxed text-slate-200 scrollbar-thin">
               {improved || "…"}
-              {isStreaming && <span className="inline-block w-2 h-4 bg-indigo-500 align-middle ml-1 animate-pulse" />}
+              {isStreaming && <span className="inline-block w-2 h-4 bg-indigo-500 align-middle ml-1 animate-pulse shadow-[0_0_8px_rgba(99,102,241,0.8)]" />}
             </pre>
             {improved && !isStreaming && (
               <div className="border-t border-slate-800 px-4 sm:px-5 py-3 bg-slate-950/30">
@@ -315,8 +293,9 @@ ${improved}
         )}
       </div>
 
-      <aside className="w-full lg:sticky lg:top-6">
+      <aside className="space-y-4 w-full lg:sticky lg:top-6">
         <ScorePanel scoreBefore={scoreBefore} scoreAfter={scoreAfter} />
+        <UpgradeCard plan={quota?.plan || "free"} quotaLimit={quota?.limit || 5} />
       </aside>
 
       <HistoryDrawer
@@ -331,6 +310,8 @@ ${improved}
         }}
         onClear={clearHistory}
       />
+
+      <PromoModal isOpen={isPromoOpen} onClose={() => setIsPromoOpen(false)} />
     </div>
   );
 }

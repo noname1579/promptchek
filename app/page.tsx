@@ -1,19 +1,39 @@
 // app/page.tsx
 import { Improver } from "@/components/Improver";
-import { Globe, Send } from "lucide-react";
+import { Globe, Send, Crown } from "lucide-react";
+import Link from "next/link";
+import { ProfileBadge } from "@/components/ProfileBadge";
+import { AuthButton } from "@/components/AuthButton";
+import { QuotaBadge } from "@/components/QuotaBadge"; // <-- Импорт
 
 export default function Home() {
   return (
     <div className="relative min-h-screen flex flex-col">
-      {/* Основной контент */}
       <div className="flex-1 max-w-6xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-12 sm:py-20">
         
         {/* Хедер страницы */}
-        <div className="mb-12 sm:text-left text-center">
+        <div className="mb-12 sm:text-left text-center relative">
           
+          {/* Бейджи в правом верхнем углу */}
+          <div className="absolute top-0 right-0 hidden sm:flex items-center gap-3">
+            {/* Индикатор лимитов */}
+            <QuotaBadge />
+
+            {/* Кнопка перехода на тарифы */}
+            <Link 
+              href="/pricing"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-400 text-sm font-medium hover:bg-amber-500/20 transition-all shadow-sm"
+            >
+              <Crown className="w-4 h-4" />
+              Pro
+            </Link>
+
+            <ProfileBadge />
+            <AuthButton />
+          </div>
+
           {/* Логотип и название в шапке */}
           <div className="inline-flex items-center gap-3 mb-6 bg-slate-900/50 border border-slate-800 rounded-2xl px-4 py-2 shadow-sm">
-            {/* Контейнер для логотипа (убрали градиент, так как у SVG свой фон) */}
             <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-xl">
               <svg width="32" height="32" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <rect width="40" height="40" rx="12" fill="#0f172a"/>
@@ -40,7 +60,6 @@ export default function Home() {
           </p>
         </div>
 
-        {/* Основной компонент */}
         <Improver />
       </div>
 
@@ -48,7 +67,6 @@ export default function Home() {
       <footer className="border-t border-slate-800/50 mt-auto">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col sm:flex-row items-center justify-between gap-6">
           
-          {/* Логотип в футере */}
           <div className="flex items-center gap-2.5">
             <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-md opacity-80">
               <svg width="24" height="24" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -58,36 +76,25 @@ export default function Home() {
                 <path d="M19 25H23L28 18" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
               </svg>
             </div>
-            <span className="text-sm font-semibold text-slate-300">
-              Promptchek
-            </span>
-            <span className="text-xs text-slate-600 ml-1">
-              © {new Date().getFullYear()}
-            </span>
+            <span className="text-sm font-semibold text-slate-300">Promptchek</span>
+            <span className="text-xs text-slate-600 ml-1">© {new Date().getFullYear()}</span>
           </div>
 
-          {/* Ссылки */}
-          <div className="flex items-center gap-6">
-            <span className="text-xs text-slate-500 hidden sm:inline">
-              Built for the AI era
-            </span>
+          <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-6">
+            <div className="flex items-center gap-4 text-xs">
+              <Link href="/legal/offer" className="text-slate-500 hover:text-white transition-colors">
+                Оферта
+              </Link>
+              <Link href="/legal/contacts" className="text-slate-500 hover:text-white transition-colors">
+                Реквизиты
+              </Link>
+            </div>
+
             <div className="flex items-center gap-3">
-              <a 
-                href="https://promptchek.ru" 
-                target="_blank"
-                rel="noopener noreferrer"
-                className="p-2 rounded-lg text-slate-500 hover:text-white hover:bg-slate-800/50 transition-all" 
-                aria-label="Website"
-              >
+              <a href="https://promptchek.ru" target="_blank" rel="noopener noreferrer" className="p-2 rounded-lg text-slate-500 hover:text-white hover:bg-slate-800/50 transition-all" aria-label="Website">
                 <Globe className="w-4 h-4" />
               </a>
-              <a 
-                href="https://t.me/promptchek" 
-                target="_blank"
-                rel="noopener noreferrer"
-                className="p-2 rounded-lg text-slate-500 hover:text-white hover:bg-slate-800/50 transition-all" 
-                aria-label="Telegram"
-              >
+              <a href="https://t.me/promptchek" target="_blank" rel="noopener noreferrer" className="p-2 rounded-lg text-slate-500 hover:text-white hover:bg-slate-800/50 transition-all" aria-label="Telegram">
                 <Send className="w-4 h-4" />
               </a>
             </div>
