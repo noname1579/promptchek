@@ -1,202 +1,85 @@
-import type { PromptMode, ScoreCriterion, ScoreResult } from "@/lib/types";
+// lib/scoring.ts
+import type { PromptMode, ScoreResult, ScoreCriterion } from "./types";
 
-interface Rule {
-  id: string;
-  label: string;
-  weight: number;
-  hint: string;
-  test: (prompt: string) => boolean;
+// Вспомогательная функция для проверки наличия слов
+function has(text: string, words: string[]): boolean {
+  const lower = text.toLowerCase();
+  return words.some((w) => lower.includes(w));
 }
 
-const ROLE_PATTERN =
-  /(ты\s*[-—:]?\s*|you are\b|act as\b|выступай|представь,? что ты|роль\s*:)/i;
-const FORMAT_PATTERN =
-  /(формат|format|json|markdown|таблиц|список|списком|bullet|схем|структур[аеу]\s+ответа|output)/i;
-const CONSTRAINT_PATTERN =
-  /(не\s+(делай|пиши|используй|добавляй)|только|максимум|минимум|не более|не менее|ограничен|avoid|do not|don't|must not|only)/i;
-const EXAMPLE_PATTERN =
-  /(пример|example|например|e\.g\.|for instance|образец)/i;
-const CONTEXT_PATTERN =
-  /(контекст|context|фон|предыстори|дано|исходн|входн|input|background)/i;
-const AUDIENCE_PATTERN =
-  /(аудитори|для\s+(новичк|эксперт|разработчик|менеджер)|audience|target reader|для кого)/i;
-const CRITERIA_PATTERN =
-  /(критери|требован|должен|должна|должно|должны|requirements?|acceptance|критерии готовности)/i;
-const STACK_PATTERN =
-  /(typescript|javascript|python|react|next\.?js|node|go\b|rust|java|kotlin|swift|php|sql|верси|version|стек|framework|фреймворк)/i;
-const EDGE_CASE_PATTERN =
-  /(граничн|edge case|ошибк|error|исключени|exception|null|undefined|пуст|валидац|валидацию)/i;
-const TESTS_PATTERN = /(тест|test|spec|покрыт|coverage|unit)/i;
-const TOOLS_PATTERN =
-  /(инструмент|tool|команд|terminal|файл|file|read_file|grep|search|mcp|api)/i;
-const STOP_PATTERN =
-  /(останов|спроси|уточни|ask (me|the user)|не\s+продолжай|если неясно|если неоднозначн)/i;
-const REFUSAL_PATTERN =
-  /(откаж|не могу|не раскрывай|не предоставляй|refuse|do not reveal|не отвечай на)/i;
-const TONE_PATTERN = /(тон|стил|tone|style|формальн|дружелюбн|кратко|лаконичн)/i;
+export function scorePrompt(text: string, mode: PromptMode): ScoreResult {
+  const criteria: ScoreCriterion[] = [];
+  const gaps: string[] = [];
+  let score = 0;
 
-const RULES: Rule[] = [
-  {
-    id: "role",
-    label: "Задана роль или персона",
-    weight: 12,
-    hint: "Начни с «Ты — <роль> с опытом в …» — это задаёт словарь и глубину ответа.",
-    test: (p) => ROLE_PATTERN.test(p),
-  },
-  {
-    id: "context",
-    label: "Есть контекст задачи",
-    weight: 14,
-    hint: "Опиши фон: что уже есть, зачем это нужно, что было раньше.",
-    test: (p) => CONTEXT_PATTERN.test(p) || p.length > 400,
-  },
-  {
-    id: "format",
-    label: "Указан формат вывода",
-    weight: 14,
-    hint: "Скажи, в каком виде нужен ответ: JSON, таблица, список, код в блоке.",
-    test: (p) => FORMAT_PATTERN.test(p),
-  },
-  {
-    id: "constraints",
-    label: "Есть ограничения",
-    weight: 12,
-    hint: "Добавь границы: чего не делать, какой объём, какие источники допустимы.",
-    test: (p) => CONSTRAINT_PATTERN.test(p),
-  },
-  {
-    id: "criteria",
-    label: "Сформулированы критерии качества",
-    weight: 12,
-    hint: "Опиши, по каким признакам ты поймёшь, что ответ хороший.",
-    test: (p) => CRITERIA_PATTERN.test(p),
-  },
-  {
-    id: "audience",
-    label: "Указана аудитория",
-    weight: 8,
-    hint: "Укажи, для кого результат: новичок, тимлид, заказчик.",
-    test: (p) => AUDIENCE_PATTERN.test(p),
-  },
-  {
-    id: "examples",
-    label: "Есть примеры",
-    weight: 8,
-    hint: "Один пример «как надо» экономит три абзаца объяснений.",
-    test: (p) => EXAMPLE_PATTERN.test(p),
-  },
-  {
-    id: "structure",
-    label: "Промпт структурирован",
-    weight: 10,
-    hint: "Разбей на блоки: Задача / Контекст / Требования / Формат.",
-    test: (p) =>
-      /(^|\n)\s*(#|[-*•]|\d+\.)\s+/m.test(p) || /\n\s*\n/.test(p.trim()),
-  },
-  {
-    id: "length",
-    label: "Достаточная детализация",
-    weight: 10,
-    hint: "Промпт короче 120 символов почти всегда недоговаривает.",
-    test: (p) => p.trim().length >= 120,
-  },
-];
+  const add = (id: string, label: string, passed: boolean, weight: number, hint: string) => {
+    criteria.push({ id, label, passed, weight, hint });
+    if (passed) score += weight;
+    else gaps.push(hint);
+  };
 
-const MODE_RULES: Record<PromptMode, Rule[]> = {
-  general: [],
-  code: [
-    {
-      id: "stack",
-      label: "Указан стек и версии",
-      weight: 10,
-      hint: "Назови язык, фреймворк и версии — иначе получишь устаревший API.",
-      test: (p) => STACK_PATTERN.test(p),
-    },
-    {
-      id: "edge-cases",
-      label: "Учтены граничные случаи",
-      weight: 8,
-      hint: "Перечисли, что делать с пустыми значениями, ошибками и невалидным вводом.",
-      test: (p) => EDGE_CASE_PATTERN.test(p),
-    },
-    {
-      id: "tests",
-      label: "Оговорены тесты",
-      weight: 7,
-      hint: "Попроси тесты или хотя бы сценарии проверки.",
-      test: (p) => TESTS_PATTERN.test(p),
-    },
-  ],
-  agent: [
-    {
-      id: "tools",
-      label: "Учтены доступные инструменты",
-      weight: 10,
-      hint: "Опиши, какими инструментами агент может пользоваться и какие файлы трогать.",
-      test: (p) => TOOLS_PATTERN.test(p),
-    },
-    {
-      id: "stop",
-      label: "Задано поведение при неоднозначности",
-      weight: 10,
-      hint: "Скажи агенту: «если требования неясны — остановись и спроси».",
-      test: (p) => STOP_PATTERN.test(p),
-    },
-    {
-      id: "criteria",
-      label: "Есть критерии готовности",
-      weight: 8,
-      hint: "Опиши Definition of Done: сборка проходит, тесты зелёные, дифф минимален.",
-      test: (p) => CRITERIA_PATTERN.test(p),
-    },
-  ],
-  system: [
-    {
-      id: "refusal",
-      label: "Описаны правила отказа",
-      weight: 12,
-      hint: "Укажи, на что ассистент не отвечает и как это формулирует.",
-      test: (p) => REFUSAL_PATTERN.test(p),
-    },
-    {
-      id: "tone",
-      label: "Задан тон и стиль",
-      weight: 10,
-      hint: "Определи тон: формальный, краткий, дружелюбный.",
-      test: (p) => TONE_PATTERN.test(p),
-    },
-    {
-      id: "priority",
-      label: "Задан приоритет инструкций",
-      weight: 8,
-      hint: "Скажи, что важнее при конфликте: безопасность, точность или краткость.",
-      test: (p) => /(приоритет|важнее|в первую очередь|priority|precedence)/i.test(p),
-    },
-  ],
-};
+  // 1. Роль или персона
+  const hasRole = has(text, ["ты —", "ты –", "выступи", "acting as", "роль", "представь", "ты являешься"]);
+  add("role", "Задана роль или персона", hasRole, 10, "Добавьте роль (например, «Ты — Senior Developer»)");
 
-export function scorePrompt(prompt: string, mode: PromptMode): ScoreResult {
-  const rules = [...RULES, ...MODE_RULES[mode]];
-  const totalWeight = rules.reduce((sum, rule) => sum + rule.weight, 0);
+  // 2. Контекст
+  const hasContext = has(text, ["контекст", "ситуация", "проект", "задача", "проблема", "цель"]);
+  add("context", "Есть контекст задачи", hasContext, 10, "Опишите контекст (для чего это нужно)");
 
-  const criteria: ScoreCriterion[] = rules.map((rule) => ({
-    id: rule.id,
-    label: rule.label,
-    weight: rule.weight,
-    passed: rule.test(prompt),
-    hint: rule.hint,
-  }));
+  // 3. Формат вывода
+  const hasFormat = has(text, ["формат", "выведи", "выдай", "напиши в виде", "markdown", "json", "таблиц", "список"]);
+  add("format", "Указан формат вывода", hasFormat, 10, "Укажите формат ответа (таблица, список, JSON)");
 
-  const earned = criteria.reduce(
-    (sum, c) => sum + (c.passed ? c.weight : 0),
-    0,
-  );
-  const score = Math.round((earned / totalWeight) * 100);
+  // 4. Ограничения
+  const hasConstraints = has(text, ["ограничени", "не более", "до", "максимум", "без", "исключи", "избегай"]);
+  add("constraints", "Есть ограничения", hasConstraints, 10, "Добавьте ограничения (длина, стиль, запреты)");
 
+  // 5. Критерии качества
+  const hasQuality = has(text, ["качеств", "критерии", "оценивай", "фокус", "акцент"]);
+  add("quality", "Сформулированы критерии качества", hasQuality, 5, "Опишите, что значит «хороший» результат");
+
+  // 6. Аудитория
+  const hasAudience = has(text, ["аудитори", "для кого", "пользовател", "читател", "новичк", "эксперт", "b2b", "b2c"]);
+  add("audience", "Указана аудитория", hasAudience, 5, "Для кого этот текст/код?");
+
+  // 7. Примеры
+  const hasExamples = has(text, ["пример", "образец", "например", "вроде", "похоже на"]);
+  add("examples", "Есть примеры", hasExamples, 10, "Приведите пример желаемого результата (few-shot)");
+
+  // 8. Структура
+  const hasStructure = has(text, ["шаг", "пункт", "сначала", "затем", "структур", "план", "1.", "2."]);
+  add("structure", "Промпт структурирован", hasStructure, 10, "Используйте списки или пошаговую структуру");
+
+  // 9. Детализация
+  const isDetailed = text.length > 150;
+  add("detail", "Достаточная детализация", isDetailed, 10, "Раскройте задачу подробнее (минимум 150 символов)");
+
+  // 10. Стек и версии (специфично для кода)
+  const hasStack = mode === "code" ? has(text, ["js", "typescript", "python", "react", "vue", "node", "стек", "версия", "tailwind"]) : true;
+  add("stack", "Указан стек и версии", hasStack, 5, "Укажите язык, фреймворк и версии");
+
+  // 11. Граничные случаи (специфично для кода)
+  const hasEdgeCases = mode === "code" ? has(text, ["edge case", "граничн", "ошибк", "исключени", "пустой", "null"]) : true;
+  add("edge", "Учтены граничные случаи", hasEdgeCases, 5, "Упомяните обработку ошибок и крайние случаи");
+
+  // 12. Тесты (специфично для кода)
+  const hasTests = mode === "code" ? has(text, ["тест", "jest", "vitest", "unit", "проверк"]) : true;
+  add("tests", "Оговорены тесты", hasTests, 10, "Попросите написать тесты или учесть их");
+
+  // Ограничиваем счет до 100
+  score = Math.min(100, score);
+
+  // --- ИСПРАВЛЕНИЕ ОШИБОК ТИПИЗАЦИИ ---
+  // Мы явно приводим типы, чтобы TypeScript не ругался на возможный undefined
+  const strengths = criteria
+    .filter((c) => c.passed)
+    .map((c) => c.label) as string[]; // <-- Явное приведение к string[]
+
+  // Возвращаем результат, гарантируя, что gaps — это массив строк
   return {
     score,
     criteria,
-    strengths: criteria.filter((c) => c.passed).map((c) => c.label),
-    gaps: criteria.filter((c) => !c.passed).map((c) => c.hint),
+    strengths,
+    gaps: gaps.filter((g): g is string => typeof g === "string"), // <-- Фильтрация undefined
   };
 }
