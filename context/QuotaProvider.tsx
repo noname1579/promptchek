@@ -9,6 +9,7 @@ export interface QuotaInfo {
   limit: number;
   remaining: number;
   disabled?: boolean;
+  plan?: string; // <-- Поле добавлено
 }
 
 interface QuotaContextType {
@@ -37,7 +38,6 @@ export function QuotaProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // Загружаем квоту при смене страницы или монтировании
   useEffect(() => {
     setLoading(true);
     refreshQuota();
