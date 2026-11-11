@@ -1,157 +1,130 @@
-import { NextRequest } from "next/server";
-import { streamCompletion } from "@/lib/llm/client";
-import { SYSTEM_PROMPT, buildUserMessage } from "@/lib/llm/prompts";
+import { getGigaChatClient, hasGigaChatKey } from "@/lib/llm-client";
 import { scorePrompt } from "@/lib/scoring";
-import { checkRateLimit } from "@/lib/rate-limit";
-import { getQuota, recordRun, type QuotaOwner } from "@/lib/quota";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
-import type { PromptMode } from "@/lib/types";
+import { checkRateLimit, sanitizePrompt } from "@/lib/security";
+export const maxDuration = 60; // Увеличиваем лимит до 60 секунд (максимум для Hobby)
 
-const VALID_MODES: PromptMode[] = ["general", "code", "agent", "system"];
-const MAX_PROMPT_LENGTH = 8000;
+// Хранилище дневных квот (в памяти)
+const quotaStore = new Map<string, { count: number; resetAt: number }>();
+const DAILY_LIMIT = 5;
 
-export const runtime = "nodejs";
-
-/**
- * Определяет владельца квоты: залогиненный пользователь или аноним по IP.
- */
-async function resolveOwner(request: NextRequest): Promise<QuotaOwner> {
-  const ip =
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-    request.headers.get("x-real-ip") ??
-    "unknown";
-
-  if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-    try {
-      const supabase = await createSupabaseServerClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (user) return { userId: user.id, anonId: null };
-    } catch {
-      // Нет сессии или Supabase недоступен — работаем как аноним.
-    }
-  }
-
-  return { userId: null, anonId: ip };
-}
-
-export async function POST(request: NextRequest) {
-  const ip =
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
-  const limit = checkRateLimit(ip);
-  if (!limit.allowed) {
-    return Response.json(
-      { error: "Слишком много запросов. Попробуйте позже." },
-      { status: 429 },
-    );
-  }
-
-  let body: unknown;
+export async function POST(req: Request) {
   try {
-    body = await request.json();
-  } catch {
-    return Response.json({ error: "Некорректный JSON" }, { status: 400 });
-  }
+    // 1. Получаем IP
+    const ip = req.headers.get("x-forwarded-for") || "anonymous";
 
-  const { prompt, mode } = (body ?? {}) as {
-    prompt?: unknown;
-    mode?: unknown;
-  };
+    // 2. Защита от спама (Rate Limit): не более 5 запросов в минуту с одного IP
+    const isAllowed = checkRateLimit(ip, 5, 60000);
+    if (!isAllowed) {
+      return new Response(
+        JSON.stringify({ error: "Слишком много запросов. Подождите минуту и попробуйте снова." }),
+        { status: 429, headers: { "Content-Type": "application/json" } }
+      );
+    }
 
-  if (typeof prompt !== "string" || prompt.trim().length < 10) {
-    return Response.json(
-      { error: "Промпт должен содержать минимум 10 символов" },
-      { status: 400 },
-    );
-  }
+    // 3. Валидация данных
+    const body = await req.json().catch(() => null);
+    if (!body) {
+      return new Response(JSON.stringify({ error: "Неверный формат запроса" }), { status: 400 });
+    }
 
-  if (prompt.length > MAX_PROMPT_LENGTH) {
-    return Response.json(
-      { error: `Промпт длиннее ${MAX_PROMPT_LENGTH} символов` },
-      { status: 400 },
-    );
-  }
+    const safePrompt = sanitizePrompt(body.prompt);
+    const mode = typeof body.mode === "string" ? body.mode : "general";
 
-  const resolvedMode: PromptMode = VALID_MODES.includes(mode as PromptMode)
-    ? (mode as PromptMode)
-    : "general";
+    if (!safePrompt) {
+      return new Response(
+        JSON.stringify({ error: "Текст должен быть от 10 до 8000 символов." }), 
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      );
+    }
 
-  const owner = await resolveOwner(request);
-  const quota = await getQuota(owner);
+    // 4. Проверка наличия ключа LLM
+    if (!hasGigaChatKey()) {
+      return new Response(JSON.stringify({ error: "LLM ключ не настроен" }), { 
+        status: 500, headers: { "Content-Type": "application/json" } 
+      });
+    }
 
-  if (!quota.allowed) {
-    return Response.json(
-      {
-        error: `Бесплатные прогоны на этот месяц закончились (${quota.limit}). Войдите, чтобы получить больше.`,
-        quota,
-      },
-      { status: 402 },
-    );
-  }
+    // 5. ПРОВЕРКА ДНЕВНОГО ЛИМИТА (КВОТЫ)
+    const now = Date.now();
+    const userQuota = quotaStore.get(ip);
 
-  const scoreBefore = scorePrompt(prompt, resolvedMode);
-
-  const encoder = new TextEncoder();
-  const stream = new ReadableStream<Uint8Array>({
-    async start(controller) {
-      const send = (event: string, data: unknown) => {
-        controller.enqueue(
-          encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`),
+    if (!userQuota || now > userQuota.resetAt) {
+      quotaStore.set(ip, { count: 1, resetAt: now + 24 * 60 * 60 * 1000 });
+    } else {
+      if (userQuota.count >= DAILY_LIMIT) {
+        return new Response(
+          JSON.stringify({ 
+            error: `Достигнут дневной лимит (${DAILY_LIMIT} запросов). Попробуйте завтра.`,
+            quota: { used: userQuota.count, limit: DAILY_LIMIT, remaining: 0, disabled: true }
+          }), 
+          { status: 429, headers: { "Content-Type": "application/json" } }
         );
-      };
-
-      send("score", { scoreBefore, quota });
-
-      let improved = "";
-      try {
-        for await (const chunk of streamCompletion(
-          SYSTEM_PROMPT,
-          buildUserMessage(prompt, resolvedMode),
-          request.signal,
-        )) {
-          improved += chunk;
-          send("delta", { text: chunk });
-        }
-
-        const scoreAfter = scorePrompt(improved, resolvedMode);
-
-        // Списываем прогон только при успешном ответе модели.
-        await recordRun({
-          owner,
-          mode: resolvedMode,
-          promptChars: prompt.length,
-        });
-
-        send("done", {
-          scoreAfter,
-          quota: {
-            ...quota,
-            used: quota.used + 1,
-            remaining: Math.max(0, quota.remaining - 1),
-          },
-        });
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Неизвестная ошибка";
-          console.error("RAW LLM ERROR:", message);
-        const isConfig = /LLM_API_KEY|api[_-]?key|configured|not configured/i.test(message);
-        send("error", {
-          message: isConfig
-            ? "Улучшение промпта недоступно (не настроен ключ LLM). Разбор и оценка работают без него."
-            : message,
-        });
-      } finally {
-        controller.close();
       }
-    },
-  });
+      userQuota.count += 1;
+      quotaStore.set(ip, userQuota);
+    }
 
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "text/event-stream; charset=utf-8",
-      "Cache-Control": "no-cache, no-transform",
-      Connection: "keep-alive",
-    },
-  });
+    const currentQuotaInfo = {
+      used: userQuota.count,
+      limit: DAILY_LIMIT,
+      remaining: Math.max(0, DAILY_LIMIT - userQuota.count),
+      disabled: false
+    };
+
+    // 6. ОТПРАВКА ЗАПРОСА В GIGACHAT
+    const client = getGigaChatClient();
+    const scoreBefore = scorePrompt(safePrompt, mode as any);
+
+    const stream = new ReadableStream({
+      async start(controller) {
+        const encoder = new TextEncoder();
+        controller.enqueue(encoder.encode(`event: score\ndata: ${JSON.stringify({ quota: currentQuotaInfo })}\n\n`));
+
+        let improvedText = "";
+
+        try {
+          const instruction = `Ты — эксперт по промпт-инжинирингу. Улучши следующий промпт, сделав его более точным и структурированным (добавь роль, контекст, ограничения и формат вывода). Верни ТОЛЬКО улучшенный текст промпта, без лишних вступлений и кавычек.\n\nИсходный промпт:\n${safePrompt}`;
+
+          const gigachatStream = await client.stream({
+            model: "GigaChat-2-Max",
+            messages: [{ role: "user", content: instruction }],
+            temperature: 0.4,
+          });
+
+          for await (const chunk of gigachatStream) {
+            const text = chunk.choices[0]?.delta?.content || "";
+            if (text) {
+              improvedText += text;
+              controller.enqueue(encoder.encode(`event: delta\ndata: ${JSON.stringify({ text })}\n\n`));
+            }
+          }
+
+          const scoreAfter = scorePrompt(improvedText, mode as any);
+
+          controller.enqueue(encoder.encode(`event: done\ndata: ${JSON.stringify({ 
+            scoreAfter, 
+            quota: currentQuotaInfo 
+          })}\n\n`));
+          
+        } catch (err) {
+          console.error("GigaChat Stream Error:", err);
+          controller.enqueue(encoder.encode(`event: error\ndata: ${JSON.stringify({ message: (err as Error).message })}\n\n`));
+        } finally {
+          controller.close();
+        }
+      },
+    });
+
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+      },
+    });
+  } catch (error) {
+    return new Response(JSON.stringify({ error: "Внутренняя ошибка сервера" }), { 
+      status: 500, headers: { "Content-Type": "application/json" } 
+    });
+  }
 }

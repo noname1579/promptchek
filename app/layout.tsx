@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
+import { AnalyticsProvider } from "@/components/analytics/AnalyticsProvider";
 
 const inter = Inter({
   subsets: ["latin", "cyrillic"],
@@ -42,7 +43,10 @@ export default function RootLayout({
           href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
         />
       </head>
-      <body>{children}</body>
+      <body>
+        {children}
+        <AnalyticsProvider />
+      </body>
     </html>
   );
 }

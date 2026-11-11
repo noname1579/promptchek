@@ -12,9 +12,15 @@
   "dependencies": {
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.119.0",
+    "clsx": "^2.1.1",
+    "gigachat": "^0.0.21",
+    "lucide-react": "^1.69.0",
     "next": "^16.4.5",
+    "posthog-js": "^1.447.1",
+    "posthog-node": "^5.63.0",
     "react": "19.1.1",
-    "react-dom": "19.1.1"
+    "react-dom": "19.1.1",
+    "tailwind-merge": "^3.7.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "4.1.13",
