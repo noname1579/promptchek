@@ -1,7 +1,7 @@
 // app/pricing/page.tsx
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react"; // <-- Добавлен Suspense
 import { Check, Sparkles, Zap, Crown, ArrowLeft, Loader2, CheckCircle2 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -45,19 +45,18 @@ const PLANS = [
   },
 ];
 
-export default function PricingPage() {
+// 1. Выносим всю логику во внутренний компонент
+function PricingContent() {
   const [loading, setLoading] = useState<string | null>(null);
   const [showSuccess, setShowSuccess] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
   const { showToast } = useToast();
 
-  // Проверяем, вернулся ли пользователь после успешной оплаты
   useEffect(() => {
     if (searchParams.get("success") === "true") {
       setShowSuccess(true);
       showToast("Оплата прошла успешно! Подписка активирована.", "success");
-      // Очищаем URL от параметра success
       router.replace("/pricing");
     }
   }, [searchParams, router, showToast]);
@@ -83,7 +82,6 @@ export default function PricingPage() {
       }
 
       if (data.confirmationUrl) {
-        // Перенаправляем на страницу оплаты ЮKassa
         window.location.href = data.confirmationUrl;
       } else {
         showToast(data.error || "Ошибка создания платежа. Попробуйте позже.", "error");
@@ -98,7 +96,6 @@ export default function PricingPage() {
   return (
     <div className="min-h-screen bg-slate-950 py-12 px-4 sm:py-20 relative">
       
-      {/* Уведомление об успешной оплате */}
       {showSuccess && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-6 py-3 rounded-2xl shadow-xl flex items-center gap-3 animate-slide-up">
           <CheckCircle2 className="w-5 h-5" />
@@ -109,7 +106,6 @@ export default function PricingPage() {
 
       <div className="max-w-6xl mx-auto">
         
-        {/* Кнопка назад */}
         <Link href="/" className="inline-flex items-center gap-2 text-sm text-slate-400 hover:text-white mb-8 transition-colors">
           <ArrowLeft className="w-4 h-4" /> На главную
         </Link>
@@ -205,5 +201,14 @@ export default function PricingPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+// 2. Внешний компонент-обертка с Suspense
+export default function PricingPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-slate-950 flex items-center justify-center text-white">Загрузка...</div>}>
+      <PricingContent />
+    </Suspense>
   );
 }
