@@ -109,7 +109,7 @@ export function PromoModal({ isOpen, onClose }: { isOpen: boolean; onClose: () =
             className="flex items-center justify-center gap-2 w-full py-3 rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 text-white font-semibold text-sm shadow-lg shadow-amber-500/25 hover:brightness-110 transition-all"
           >
             <Zap className="w-4 h-4" />
-            Купить Pro (299 ₽/мес)
+            Купить Pro (149 ₽/мес)
           </Link>
 
           {/* Кнопка Telegram */}

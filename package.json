@@ -12,6 +12,7 @@
   "dependencies": {
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.119.0",
+    "@webzaytsev/yookassa-ts-sdk": "^3.5.4",
     "clsx": "^2.1.1",
     "gigachat": "^0.0.21",
     "lucide-react": "^1.69.0",
