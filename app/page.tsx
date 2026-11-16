@@ -1,6 +1,6 @@
 // app/page.tsx
 import { Improver } from "@/components/Improver";
-import { Globe, Send, Crown } from "lucide-react";
+import { Globe, Send, Crown, Flame } from "lucide-react";
 import Link from "next/link";
 import { ProfileBadge } from "@/components/ProfileBadge";
 import { AuthButton } from "@/components/AuthButton";
@@ -14,36 +14,51 @@ export default function Home() {
         {/* Хедер страницы */}
         <div className="mb-12 sm:text-left text-center relative">
           
-          {/* Бейджи: на ПК справа сверху, на телефоне - по центру под текстом */}
-          <div className="flex flex-wrap items-center justify-center sm:absolute sm:top-0 sm:right-0 sm:justify-end gap-2 sm:gap-3 mb-6 sm:mb-0">
-            <QuotaBadge />
+          {/* Верхняя панель: Логотип, ссылки и профиль */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mb-10 sm:mb-12">
             
-            <Link 
-              href="/pricing"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-400 text-sm font-medium hover:bg-amber-500/20 transition-all shadow-sm"
-            >
-              <Crown className="w-4 h-4" />
-              Pro
-            </Link>
+            {/* Логотип и название */}
+            <div className="flex items-center gap-4">
+              <Link href="/" className="inline-flex items-center gap-3 bg-slate-900/50 border border-slate-800 rounded-2xl px-4 py-2 shadow-sm hover:border-slate-700 transition-colors">
+                <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-xl">
+                  <svg width="32" height="32" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect width="40" height="40" rx="12" fill="#0f172a"/>
+                    <rect x="0.5" y="0.5" width="39" height="39" rx="11.5" stroke="#334155"/>
+                    <path d="M11 15L17 20L11 25" stroke="#818cf8" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+                    <path d="M19 25H23L28 18" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </div>
+                <span className="text-lg font-bold text-white tracking-tight">Promptchek</span>
+                <span className="text-[10px] uppercase tracking-widest text-emerald-400 font-semibold bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20 ml-1">
+                  beta
+                </span>
+              </Link>
 
-            <ProfileBadge />
-            <AuthButton />
-          </div>
-
-          {/* Логотип и название в шапке */}
-          <div className="inline-flex items-center gap-3 mb-6 bg-slate-900/50 border border-slate-800 rounded-2xl px-4 py-2 shadow-sm mt-4 sm:mt-0">
-            <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-xl">
-              <svg width="32" height="32" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <rect width="40" height="40" rx="12" fill="#0f172a"/>
-                <rect x="0.5" y="0.5" width="39" height="39" rx="11.5" stroke="#334155"/>
-                <path d="M11 15L17 20L11 25" stroke="#818cf8" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
-                <path d="M19 25H23L28 18" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
+              {/* Ссылка на Топ промптов */}
+              <Link 
+                href="/explore" 
+                className="hidden sm:flex items-center gap-1.5 text-sm font-medium text-slate-400 hover:text-indigo-400 transition-colors"
+              >
+                <Flame className="w-4 h-4" />
+                Топ промптов
+              </Link>
             </div>
-            <span className="text-lg font-bold text-white tracking-tight">Promptchek</span>
-            <span className="text-[10px] uppercase tracking-widest text-emerald-400 font-semibold bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20 ml-1">
-              beta
-            </span>
+
+            {/* Бейджи профиля */}
+            <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3">
+              <QuotaBadge />
+              
+              <Link 
+                href="/pricing"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-400 text-sm font-medium hover:bg-amber-500/20 transition-all shadow-sm"
+              >
+                <Crown className="w-4 h-4" />
+                Pro
+              </Link>
+
+              <ProfileBadge />
+              <AuthButton />
+            </div>
           </div>
 
           <h1 className="text-3xl sm:text-4xl lg:text-6xl font-bold tracking-tight text-white mb-4 sm:mb-6">
@@ -63,7 +78,7 @@ export default function Home() {
 
       {/* Футер */}
       <footer className="border-t border-slate-800/50 mt-auto">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 flex flex-col sm:flex-row items-center justify-between gap-4 sm:gap-6">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col sm:flex-row items-center justify-between gap-6">
           
           <div className="flex items-center gap-2.5">
             <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-md opacity-80">
@@ -79,7 +94,12 @@ export default function Home() {
           </div>
 
           <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-6">
+            
+            {/* Ссылки */}
             <div className="flex items-center gap-4 text-xs">
+              <Link href="/explore" className="text-slate-500 hover:text-white transition-colors flex items-center gap-1">
+                <Flame className="w-3.5 h-3.5" /> Топ промптов
+              </Link>
               <Link href="/legal/offer" className="text-slate-500 hover:text-white transition-colors">
                 Оферта
               </Link>
@@ -88,6 +108,7 @@ export default function Home() {
               </Link>
             </div>
 
+            {/* Соцсети */}
             <div className="flex items-center gap-3">
               <a href="https://promptchek.ru" target="_blank" rel="noopener noreferrer" className="p-2 rounded-lg text-slate-500 hover:text-white hover:bg-slate-800/50 transition-all" aria-label="Website">
                 <Globe className="w-4 h-4" />
@@ -97,6 +118,7 @@ export default function Home() {
               </a>
             </div>
           </div>
+
         </div>
       </footer>
     </div>

@@ -1,23 +1,37 @@
 // app/api/share/route.ts
 import { NextResponse } from "next/server";
-import { saveSharedPrompt, generateSlug } from "@/lib/share-store";
+import { createClient } from "@/lib/supabase/server";
 
 export async function POST(req: Request) {
   try {
-    const { title, prompt, mode } = await req.json();
+    const { prompt, improved, mode } = await req.json();
+    
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
 
-    if (!prompt) {
-      return NextResponse.json({ error: "Нет текста" }, { status: 400 });
+    if (!user) {
+      return NextResponse.json({ error: "Необходимо войти в аккаунт, чтобы делиться промптами" }, { status: 401 });
     }
 
-    const slug = generateSlug();
-    await saveSharedPrompt(slug, { title, prompt, mode, createdAt: Date.now() });
+    // Сохраняем промпт в историю с флагом is_public
+    const { data, error } = await supabase
+      .from('history')
+      .insert({
+        user_id: user.id,
+        prompt: prompt,
+        improved: improved,
+        mode: mode,
+        is_public: true 
+      })
+      .select()
+      .single();
 
-    const host = req.headers.get("host") || "localhost:3000";
-    const protocol = host.includes("localhost") ? "http" : "https";
-    
-    return NextResponse.json({ url: `${protocol}://${host}/share/${slug}` });
+    if (error) throw error;
+
+    // Возвращаем ссылку на страницу /explore (или можно на /share, если хотите)
+    return NextResponse.json({ url: `/explore` });
   } catch (error) {
-    return NextResponse.json({ error: "Ошибка сервера" }, { status: 500 });
+    console.error("Share API Error:", error);
+    return NextResponse.json({ error: "Ошибка при шаринге" }, { status: 500 });
   }
 }

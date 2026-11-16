@@ -26,7 +26,6 @@ export function Improver() {
   const { quota, setQuota } = useQuota(); 
   const router = useRouter();
 
-  // Проверяем, является ли пользователь Pro (по данным из квоты)
   const isPro = quota?.plan === "pro" || quota?.plan === "pro_plus";
 
   const [prompt, setPrompt] = useState("");
@@ -39,6 +38,7 @@ export function Improver() {
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [copied, setCopied] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [isSharing, setIsSharing] = useState(false); // <-- Стейт для загрузки шаринга
   const [shareLink, setShareLink] = useState<string | null>(null);
   
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
@@ -54,7 +54,6 @@ export function Improver() {
   }, [prompt, mode]);
 
   const optimizePrompt = async () => {
-    // Если пользователь не Pro — показываем модалку и выходим
     if (!isPro) {
       showToast("Автоматическое улучшение доступно только на тарифе Pro.", "error");
       router.push("/pricing");
@@ -208,20 +207,35 @@ export function Improver() {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // ОБНОВЛЕННАЯ ФУНКЦИЯ ШАРИНГА
   const share = async () => {
-    if (!improved) return;
+    if (!improved || isSharing) return;
+    
+    setIsSharing(true);
     try {
-      const res = await fetch("/api/share", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: "Improved Prompt", prompt: improved, mode }) });
+      const res = await fetch("/api/share", { 
+        method: "POST", 
+        headers: { "Content-Type": "application/json" }, 
+        body: JSON.stringify({ prompt, improved, mode }) 
+      });
+      
       const data = await res.json();
-      if (data.url) {
-        await navigator.clipboard.writeText(data.url);
-        setShareLink(data.url);
-        showToast("Ссылка скопирована!");
-        trackEvent("share_link_created", { mode });
-        setTimeout(() => setShareLink(null), 2000);
+      
+      if (!res.ok) {
+        throw new Error(data.error || "Ошибка при создании ссылки");
       }
-    } catch {
-      showToast("Не удалось создать ссылку", "error");
+
+      if (data.url) {
+        await navigator.clipboard.writeText(`${window.location.origin}${data.url}`);
+        setShareLink(data.url);
+        showToast("Промпт опубликован в Топе! Ссылка скопирована.", "success");
+        trackEvent("share_link_created", { mode });
+        setTimeout(() => setShareLink(null), 3000);
+      }
+    } catch (err: any) {
+      showToast(err.message, "error");
+    } finally {
+      setIsSharing(false);
     }
   };
 
@@ -354,8 +368,8 @@ ${improved}
                 <button onClick={downloadMarkdown} disabled={!improved} className="text-xs font-medium text-slate-400 hover:text-white disabled:opacity-40 transition-colors flex items-center gap-1.5">
                   <Download className="w-3.5 h-3.5" /> Скачать
                 </button>
-                <button onClick={share} disabled={!improved} className="text-xs font-medium text-slate-400 hover:text-white disabled:opacity-40 transition-colors flex items-center gap-1.5">
-                  <Share2 className="w-3.5 h-3.5" /> {shareLink ? "Ссылка!" : "Поделиться"}
+                <button onClick={share} disabled={!improved || isSharing} className="text-xs font-medium text-slate-400 hover:text-white disabled:opacity-40 transition-colors flex items-center gap-1.5">
+                  {isSharing ? <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Публикуем...</> : <><Share2 className="w-3.5 h-3.5" /> {shareLink ? "Скопировано!" : "Поделиться"}</>}
                 </button>
                 {isStreaming && (
                   <button onClick={() => abortRef.current?.abort()} className="text-xs font-medium text-rose-400 hover:text-rose-300 flex items-center gap-1.5">
