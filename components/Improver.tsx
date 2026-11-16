@@ -4,24 +4,30 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { scorePrompt } from "@/lib/scoring";
 import type { PromptMode, ScoreResult } from "@/lib/types";
-import { Share2, Sparkles, Copy, Check, Square, Zap, History, Download } from "lucide-react";
+import { Share2, Sparkles, Copy, Check, Square, Zap, History, Download, Wand2, RefreshCw, HelpCircle, Lock } from "lucide-react";
 import { trackEvent } from "@/lib/analytics-client";
 import { useToast } from "@/components/ui/ToastProvider";
 import { PromptInput } from "@/components/improver/PromptInput";
 import { ScorePanel } from "@/components/improver/ScorePanel";
 import { HistoryDrawer } from "@/components/improver/HistoryDrawer";
 import { PromoModal } from "@/components/PromoModal";
+import { PromptClarifier } from "@/components/PromptClarifier";
 import { UpgradeCard } from "@/components/UpgradeCard";
 import { useGamification } from "@/lib/useGamification";
 import { useHistory } from "@/lib/useHistory";
 import { useQuota } from "@/context/QuotaProvider";
 import { cn } from "@/lib/utils";
+import { useRouter } from "next/navigation";
 
 export function Improver() {
   const { showToast } = useToast();
   const { addReward } = useGamification();
   const { history, saveHistory, clearHistory } = useHistory();
   const { quota, setQuota } = useQuota(); 
+  const router = useRouter();
+
+  // Проверяем, является ли пользователь Pro (по данным из квоты)
+  const isPro = quota?.plan === "pro" || quota?.plan === "pro_plus";
 
   const [prompt, setPrompt] = useState("");
   const [mode, setMode] = useState<PromptMode>("general");
@@ -30,12 +36,14 @@ export function Improver() {
   const [scoreAfter, setScoreAfter] = useState<ScoreResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState(false);
+  const [isOptimizing, setIsOptimizing] = useState(false);
   const [copied, setCopied] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
   const [shareLink, setShareLink] = useState<string | null>(null);
   
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isPromoOpen, setIsPromoOpen] = useState(false);
+  const [isClarifierOpen, setIsClarifierOpen] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
 
@@ -44,6 +52,59 @@ export function Improver() {
     if (trimmed.length >= 10) setScoreBefore(scorePrompt(trimmed, mode));
     else setScoreBefore(null);
   }, [prompt, mode]);
+
+  const optimizePrompt = async () => {
+    // Если пользователь не Pro — показываем модалку и выходим
+    if (!isPro) {
+      showToast("Автоматическое улучшение доступно только на тарифе Pro.", "error");
+      router.push("/pricing");
+      return;
+    }
+
+    if (prompt.trim().length < 10) return;
+    
+    if (quota?.remaining === 0) {
+      setIsPromoOpen(true);
+      return;
+    }
+
+    setIsOptimizing(true);
+    setError(null);
+
+    try {
+      const res = await fetch("/api/optimize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt, mode }),
+      });
+      
+      const data = await res.json();
+      
+      if (!res.ok) {
+        if (res.status === 429) {
+          setIsPromoOpen(true);
+          throw new Error("limit_reached");
+        }
+        throw new Error(data.error || "Ошибка оптимизации");
+      }
+
+      setPrompt(data.improvedPrompt);
+      showToast(`Промпт улучшен! Новая оценка: ${data.score}/100`, "success");
+      
+      if (data.quota) {
+        setQuota(data.quota);
+      }
+      
+      addReward(15); 
+      
+    } catch (err: any) {
+      if (err.message !== "limit_reached") {
+        showToast(err.message, "error");
+      }
+    } finally {
+      setIsOptimizing(false);
+    }
+  };
 
   const run = useCallback(async () => {
     if (isRunning || prompt.trim().length < 10) return;
@@ -243,6 +304,36 @@ ${improved}
           run={run} 
         />
 
+        {prompt.trim().length >= 10 && (
+          <div className="flex flex-col sm:flex-row gap-3">
+            <button
+              onClick={optimizePrompt}
+              disabled={isOptimizing}
+              className={cn(
+                "flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-semibold transition-all disabled:opacity-50",
+                isPro 
+                  ? "border-indigo-500/30 bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20" 
+                  : "border-amber-500/30 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20"
+              )}
+            >
+              {isOptimizing ? (
+                <><RefreshCw className="w-4 h-4 animate-spin" /> Нейросеть улучшает...</>
+              ) : !isPro ? (
+                <><Lock className="w-4 h-4" /> Улучшить автоматически (Pro)</>
+              ) : (
+                <><Wand2 className="w-4 h-4" /> Улучшить автоматически</>
+              )}
+            </button>
+            
+            <button
+              onClick={() => setIsClarifierOpen(true)}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-slate-700 bg-slate-800/50 text-slate-300 text-sm font-semibold hover:bg-slate-800 transition-all"
+            >
+              <HelpCircle className="w-4 h-4" /> Задать вопросы
+            </button>
+          </div>
+        )}
+
         {error && (
           <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-300 flex items-start justify-between gap-3 animate-slide-up">
             <span>{error}</span>
@@ -291,10 +382,8 @@ ${improved}
         )}
       </div>
 
-      {/* Правая колонка: на мобильных скрываем UpgradeCard */}
       <aside className="space-y-4 w-full lg:sticky lg:top-6">
         <ScorePanel scoreBefore={scoreBefore} scoreAfter={scoreAfter} />
-        
         <div className="hidden lg:block">
           <UpgradeCard plan={quota?.plan || "free"} quotaLimit={quota?.limit || 5} />
         </div>
@@ -314,6 +403,16 @@ ${improved}
       />
 
       <PromoModal isOpen={isPromoOpen} onClose={() => setIsPromoOpen(false)} />
+      
+      <PromptClarifier 
+        isOpen={isClarifierOpen} 
+        onClose={() => setIsClarifierOpen(false)}
+        originalPrompt={prompt}
+        onClarify={(newPrompt) => {
+          setPrompt(newPrompt);
+          showToast("Промпт дополнен деталями!", "success");
+        }}
+      />
     </div>
   );
 }

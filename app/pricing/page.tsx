@@ -1,9 +1,9 @@
 // app/pricing/page.tsx
 "use client";
 
-import { useState, useEffect, Suspense } from "react"; // <-- Добавлен Suspense
-import { Check, Sparkles, Zap, Crown, ArrowLeft, Loader2, CheckCircle2 } from "lucide-react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useState, Suspense } from "react";
+import { Check, Sparkles, Zap, Crown, ArrowLeft, Loader2 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/components/ui/ToastProvider";
@@ -15,7 +15,12 @@ const PLANS = [
     price: "0",
     oldPrice: null,
     desc: "Для знакомства с сервисом",
-    features: ["5 улучшений в день", "История из 10 промптов", "Стандартная скорость", "Базовые достижения"],
+    features: [
+      "5 улучшений в день", 
+      "История из 10 промптов", 
+      "Базовые оценки по 12 критериям", 
+      "Стандартная скорость"
+    ],
     icon: Sparkles,
     color: "slate",
     discount: null,
@@ -26,7 +31,13 @@ const PLANS = [
     price: "149",
     oldPrice: "299",
     desc: "Для ежедневной работы с AI",
-    features: ["100 улучшений в день", "Неограниченная история", "Приоритетная очередь", "Доступ к GigaChat Max", "Все достижения"],
+    features: [
+      "100 улучшений в день", 
+      "Неограниченная история", 
+      "Автоматическое улучшение промптов", 
+      "Приоритетная очередь (без ожидания)", 
+      "Все достижения и геймификация"
+    ],
     icon: Zap,
     color: "indigo",
     popular: true,
@@ -38,28 +49,23 @@ const PLANS = [
     price: "399",
     oldPrice: "599",
     desc: "Для профессионалов и команд",
-    features: ["500 улучшений в день", "Всё из Pro", "Ранний доступ к Optimizer", "Экспорт в JSON/Markdown", "Приоритетная поддержка"],
+    features: [
+      "500 улучшений в день", 
+      "Всё из Pro", 
+      "Ранний доступ к Optimizer (A/B тесты)", 
+      "Экспорт в JSON/Markdown", 
+      "Приоритетная поддержка в Telegram"
+    ],
     icon: Crown,
     color: "amber",
     discount: "Скидка 33% при запуске",
   },
 ];
 
-// 1. Выносим всю логику во внутренний компонент
 function PricingContent() {
   const [loading, setLoading] = useState<string | null>(null);
-  const [showSuccess, setShowSuccess] = useState(false);
   const router = useRouter();
-  const searchParams = useSearchParams();
   const { showToast } = useToast();
-
-  useEffect(() => {
-    if (searchParams.get("success") === "true") {
-      setShowSuccess(true);
-      showToast("Оплата прошла успешно! Подписка активирована.", "success");
-      router.replace("/pricing");
-    }
-  }, [searchParams, router, showToast]);
 
   const handleSubscribe = async (planId: string) => {
     if (planId === "free") return router.push("/");
@@ -82,6 +88,7 @@ function PricingContent() {
       }
 
       if (data.confirmationUrl) {
+        // Перенаправляем на страницу оплаты ЮKassa
         window.location.href = data.confirmationUrl;
       } else {
         showToast(data.error || "Ошибка создания платежа. Попробуйте позже.", "error");
@@ -95,15 +102,6 @@ function PricingContent() {
 
   return (
     <div className="min-h-screen bg-slate-950 py-12 px-4 sm:py-20 relative">
-      
-      {showSuccess && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-6 py-3 rounded-2xl shadow-xl flex items-center gap-3 animate-slide-up">
-          <CheckCircle2 className="w-5 h-5" />
-          <span className="font-medium">Подписка успешно активирована!</span>
-          <button onClick={() => setShowSuccess(false)} className="ml-4 text-emerald-500 hover:text-emerald-300">✕</button>
-        </div>
-      )}
-
       <div className="max-w-6xl mx-auto">
         
         <Link href="/" className="inline-flex items-center gap-2 text-sm text-slate-400 hover:text-white mb-8 transition-colors">
@@ -204,7 +202,6 @@ function PricingContent() {
   );
 }
 
-// 2. Внешний компонент-обертка с Suspense
 export default function PricingPage() {
   return (
     <Suspense fallback={<div className="min-h-screen bg-slate-950 flex items-center justify-center text-white">Загрузка...</div>}>

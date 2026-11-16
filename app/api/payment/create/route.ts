@@ -35,7 +35,7 @@ export async function POST(req: Request) {
       },
       confirmation: {
         type: "redirect",
-        return_url: `${process.env.NEXT_PUBLIC_APP_URL}/pricing?success=true`,
+        return_url: `${process.env.NEXT_PUBLIC_APP_URL}/pricing`,
       } as IConfirmationRedirect, // <-- Приводим тип
       capture: true,
       description,
