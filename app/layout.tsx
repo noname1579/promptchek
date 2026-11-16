@@ -1,12 +1,12 @@
-// app/layout.tsx
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { AppProvider } from "@/context/AppProvider";
 import { ToastProvider } from "@/components/ui/ToastProvider";
-import { QuotaProvider } from "@/context/QuotaProvider"; // <-- Импорт
+import { QuotaProvider } from "@/context/QuotaProvider";
 import { AppShell } from "@/components/layout/AppShell";
 import { validateEnv } from "@/lib/env";
+import { Analytics } from "@vercel/analytics/next"; // <-- Импорт аналитики
 
 validateEnv();
 
@@ -29,11 +29,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="font-sans antialiased bg-slate-950 text-slate-100">
         <AppProvider>
           <ToastProvider>
-            <QuotaProvider> {/* <-- Обертка */}
+            <QuotaProvider>
               <AppShell>{children}</AppShell>
             </QuotaProvider>
           </ToastProvider>
         </AppProvider>
+        
+        {/* Аналитика Vercel */}
+        <Analytics />
+        
       </body>
     </html>
   );
