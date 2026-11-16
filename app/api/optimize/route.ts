@@ -51,42 +51,68 @@ export async function POST(req: Request) {
 
     // ЖЕСТКАЯ ЗАЩИТА: Если план free — 403
     if (planName === "free") {
-      return NextResponse.json(
-        { error: "Функция доступна только на тарифе Pro" }, 
-        { status: 403 }
-      );
+      return NextResponse.json({ error: "Функция доступна только на тарифе Pro" }, { status: 403 });
     }
 
-    // --- ПРОВЕРКА ЛИМИТОВ ---
-    const now = Date.now();
-    let userQuota = quotaStore.get(ip);
+    // --- ПРОВЕРКА И ОБНОВЛЕНИЕ КВОТЫ ---
+    const now = new Date();
+    let currentQuotaInfo = { used: 0, limit: currentLimit, remaining: currentLimit, disabled: false, plan: planName };
 
-    if (!userQuota || now > userQuota.resetAt) {
-      userQuota = { count: 1, resetAt: now + 24 * 60 * 60 * 1000 };
-      quotaStore.set(ip, userQuota);
-    } else {
-      if (userQuota.count >= currentLimit) {
-        return NextResponse.json(
-          { 
-            error: "limit_reached",
-            message: `Достигнут дневной лимит (${currentLimit} запросов).`,
-            quota: { used: userQuota.count, limit: currentLimit, remaining: 0, disabled: true }
-          }, 
-          { status: 429 }
-        );
+    if (user) {
+      // Если пользователь авторизован — храним в БД
+      const { data: quotaData } = await supabase
+        .from('user_quotas')
+        .select('*')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (!quotaData || new Date(quotaData.reset_at) < now) {
+        const resetAt = new Date();
+        resetAt.setDate(resetAt.getDate() + 1);
+        
+        await supabase.from('user_quotas').upsert({
+          user_id: user.id,
+          count: 1,
+          reset_at: resetAt.toISOString()
+        });
+        
+        currentQuotaInfo = { used: 1, limit: currentLimit, remaining: currentLimit - 1, disabled: false, plan: planName };
+      } else {
+        if (quotaData.count >= currentLimit) {
+          return NextResponse.json(
+            { 
+              error: "limit_reached",
+              message: `Достигнут дневной лимит (${currentLimit} запросов).`,
+              quota: { used: quotaData.count, limit: currentLimit, remaining: 0, disabled: true, plan: planName }
+            }, 
+            { status: 429 }
+          );
+        }
+        
+        await supabase.from('user_quotas').update({ count: quotaData.count + 1 }).eq('user_id', user.id);
+        
+        currentQuotaInfo = { used: quotaData.count + 1, limit: currentLimit, remaining: currentLimit - (quotaData.count + 1), disabled: false, plan: planName };
       }
-      userQuota.count += 1;
-      quotaStore.set(ip, userQuota);
+    } else {
+      // Для гостей (хотя сюда они не должны попадать из-за проверки тарифа выше)
+      let userQuota = quotaStore.get(ip);
+      if (!userQuota || Date.now() > userQuota.resetAt) {
+        userQuota = { count: 1, resetAt: Date.now() + 24 * 60 * 60 * 1000 };
+        quotaStore.set(ip, userQuota);
+      } else {
+        if (userQuota.count >= currentLimit) {
+          return NextResponse.json(
+            { error: "limit_reached", message: "Достигнут лимит.", quota: { used: userQuota.count, limit: currentLimit, remaining: 0, disabled: true } }, 
+            { status: 429 }
+          );
+        }
+        userQuota.count += 1;
+        quotaStore.set(ip, userQuota);
+      }
+      currentQuotaInfo = { used: userQuota.count, limit: currentLimit, remaining: Math.max(0, currentLimit - userQuota.count), disabled: false, plan: planName };
     }
 
-    const currentQuotaInfo = {
-      used: userQuota.count,
-      limit: currentLimit,
-      remaining: Math.max(0, currentLimit - userQuota.count),
-      disabled: false,
-      plan: planName
-    };
-
+    // --- ЗАПРОС К GIGACHAT ---
     const client = getGigaChatClient();
     const instruction = `Ты — эксперт по промпт-инжинирингу. Твоя задача — улучшить следующий промпт, сделав его максимально точным, структурированным и профессиональным. 
 Добавь в него недостающие элементы: роль (кто ты), контекст (для чего это нужно), ограничения (чего нельзя делать), формат вывода (как должен выглядеть ответ) и критерии качества.
@@ -107,7 +133,7 @@ ${safePrompt}`;
     return NextResponse.json({ 
       improvedPrompt: improvedText,
       score: scoreAfter.score,
-      quota: currentQuotaInfo
+      quota: currentQuotaInfo // <-- Возвращаем обновленную квоту
     });
 
   } catch (error) {

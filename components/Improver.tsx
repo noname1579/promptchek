@@ -38,7 +38,7 @@ export function Improver() {
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [copied, setCopied] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
-  const [isSharing, setIsSharing] = useState(false); // <-- Стейт для загрузки шаринга
+  const [isSharing, setIsSharing] = useState(false);
   const [shareLink, setShareLink] = useState<string | null>(null);
   
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
@@ -90,6 +90,7 @@ export function Improver() {
       setPrompt(data.improvedPrompt);
       showToast(`Промпт улучшен! Новая оценка: ${data.score}/100`, "success");
       
+      // ОБНОВЛЯЕМ ЛИМИТ НА КЛИЕНТЕ
       if (data.quota) {
         setQuota(data.quota);
       }
@@ -174,7 +175,7 @@ export function Improver() {
           } else if (event === "done") {
             const finalScore = data.scoreAfter as ScoreResult;
             setScoreAfter(finalScore);
-            if (data.quota) setQuota(data.quota as any);
+            if (data.quota) setQuota(data.quota as any); // Обновляем лимит
             
             addReward(10); 
             if (finalScore.score === 100) addReward(50, "perfect_score");
@@ -207,7 +208,6 @@ export function Improver() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // ОБНОВЛЕННАЯ ФУНКЦИЯ ШАРИНГА
   const share = async () => {
     if (!improved || isSharing) return;
     
