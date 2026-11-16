@@ -96,9 +96,12 @@ export default function Home() {
           <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-6">
             
             {/* Ссылки */}
-            <div className="flex items-center gap-4 text-xs">
+            <div className="flex flex-wrap items-center justify-center gap-4 text-xs">
               <Link href="/explore" className="text-slate-500 hover:text-white transition-colors flex items-center gap-1">
                 <Flame className="w-3.5 h-3.5" /> Топ промптов
+              </Link>
+              <Link href="/faq" className="text-slate-500 hover:text-white transition-colors">
+                FAQ
               </Link>
               <Link href="/legal/offer" className="text-slate-500 hover:text-white transition-colors">
                 Оферта
