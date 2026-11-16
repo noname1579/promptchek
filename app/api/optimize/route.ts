@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { getGigaChatClient, hasGigaChatKey } from "@/lib/llm-client";
 import { scorePrompt } from "@/lib/scoring";
 import { sanitizePrompt } from "@/lib/security";
-import { quotaStore, FREE_LIMIT, PRO_LIMIT, PRO_PLUS_LIMIT } from "@/lib/quota-store";
+import { FREE_LIMIT, PRO_LIMIT, PRO_PLUS_LIMIT } from "@/lib/quota-store";
 import { createClient } from "@/lib/supabase/server";
 
 export const maxDuration = 60;
@@ -26,7 +26,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "LLM ключ не настроен" }, { status: 500 });
     }
 
-    // --- ПРОВЕРКА ПОДПИСКИ ---
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
     
@@ -49,77 +48,53 @@ export async function POST(req: Request) {
       }
     }
 
-    // ЖЕСТКАЯ ЗАЩИТА: Если план free — 403
     if (planName === "free") {
       return NextResponse.json({ error: "Функция доступна только на тарифе Pro" }, { status: 403 });
     }
 
-    // --- ПРОВЕРКА И ОБНОВЛЕНИЕ КВОТЫ ---
     const now = new Date();
     let currentQuotaInfo = { used: 0, limit: currentLimit, remaining: currentLimit, disabled: false, plan: planName };
 
+    let query = supabase.from('user_quotas').select('*');
     if (user) {
-      // Если пользователь авторизован — храним в БД
-      const { data: quotaData } = await supabase
-        .from('user_quotas')
-        .select('*')
-        .eq('user_id', user.id)
-        .maybeSingle();
-
-      if (!quotaData || new Date(quotaData.reset_at) < now) {
-        const resetAt = new Date();
-        resetAt.setDate(resetAt.getDate() + 1);
-        
-        await supabase.from('user_quotas').upsert({
-          user_id: user.id,
-          count: 1,
-          reset_at: resetAt.toISOString()
-        });
-        
-        currentQuotaInfo = { used: 1, limit: currentLimit, remaining: currentLimit - 1, disabled: false, plan: planName };
-      } else {
-        if (quotaData.count >= currentLimit) {
-          return NextResponse.json(
-            { 
-              error: "limit_reached",
-              message: `Достигнут дневной лимит (${currentLimit} запросов).`,
-              quota: { used: quotaData.count, limit: currentLimit, remaining: 0, disabled: true, plan: planName }
-            }, 
-            { status: 429 }
-          );
-        }
-        
-        await supabase.from('user_quotas').update({ count: quotaData.count + 1 }).eq('user_id', user.id);
-        
-        currentQuotaInfo = { used: quotaData.count + 1, limit: currentLimit, remaining: currentLimit - (quotaData.count + 1), disabled: false, plan: planName };
-      }
+      query = query.eq('user_id', user.id);
     } else {
-      // Для гостей (хотя сюда они не должны попадать из-за проверки тарифа выше)
-      let userQuota = quotaStore.get(ip);
-      if (!userQuota || Date.now() > userQuota.resetAt) {
-        userQuota = { count: 1, resetAt: Date.now() + 24 * 60 * 60 * 1000 };
-        quotaStore.set(ip, userQuota);
-      } else {
-        if (userQuota.count >= currentLimit) {
-          return NextResponse.json(
-            { error: "limit_reached", message: "Достигнут лимит.", quota: { used: userQuota.count, limit: currentLimit, remaining: 0, disabled: true } }, 
-            { status: 429 }
-          );
-        }
-        userQuota.count += 1;
-        quotaStore.set(ip, userQuota);
-      }
-      currentQuotaInfo = { used: userQuota.count, limit: currentLimit, remaining: Math.max(0, currentLimit - userQuota.count), disabled: false, plan: planName };
+      query = query.eq('ip_address', ip);
     }
 
-    // --- ЗАПРОС К GIGACHAT ---
-    const client = getGigaChatClient();
-    const instruction = `Ты — эксперт по промпт-инжинирингу. Твоя задача — улучшить следующий промпт, сделав его максимально точным, структурированным и профессиональным. 
-Добавь в него недостающие элементы: роль (кто ты), контекст (для чего это нужно), ограничения (чего нельзя делать), формат вывода (как должен выглядеть ответ) и критерии качества.
-Верни ТОЛЬКО улучшенный текст промпта, без лишних вступлений, объяснений и кавычек.
+    const { data: quotaData } = await query.maybeSingle();
 
-Исходный промпт:
-${safePrompt}`;
+    if (!quotaData || new Date(quotaData.reset_at) < now) {
+      const resetAt = new Date();
+      resetAt.setDate(resetAt.getDate() + 1);
+      
+      await supabase.from('user_quotas').insert({
+        user_id: user?.id || null,
+        ip_address: user ? null : ip,
+        count: 1,
+        reset_at: resetAt.toISOString()
+      });
+      
+      currentQuotaInfo = { used: 1, limit: currentLimit, remaining: currentLimit - 1, disabled: false, plan: planName };
+    } else {
+      if (quotaData.count >= currentLimit) {
+        return NextResponse.json(
+          { 
+            error: "limit_reached",
+            message: `Достигнут дневной лимит (${currentLimit} запросов).`,
+            quota: { used: quotaData.count, limit: currentLimit, remaining: 0, disabled: true, plan: planName }
+          }, 
+          { status: 429 }
+        );
+      }
+      
+      await supabase.from('user_quotas').update({ count: quotaData.count + 1 }).eq('id', quotaData.id);
+      
+      currentQuotaInfo = { used: quotaData.count + 1, limit: currentLimit, remaining: currentLimit - (quotaData.count + 1), disabled: false, plan: planName };
+    }
+
+    const client = getGigaChatClient();
+    const instruction = `Ты — эксперт по промпт-инжинирингу. Улучши следующий промпт, сделав его более точным и структурированным. Верни ТОЛЬКО улучшенный текст промпта.\n\nИсходный промпт:\n${safePrompt}`;
 
     const response = await client.chat({
       model: "GigaChat-2-Max",
@@ -133,7 +108,7 @@ ${safePrompt}`;
     return NextResponse.json({ 
       improvedPrompt: improvedText,
       score: scoreAfter.score,
-      quota: currentQuotaInfo // <-- Возвращаем обновленную квоту
+      quota: currentQuotaInfo
     });
 
   } catch (error) {

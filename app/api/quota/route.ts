@@ -1,7 +1,7 @@
 // app/api/quota/route.ts
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { quotaStore, FREE_LIMIT, PRO_LIMIT, PRO_PLUS_LIMIT } from "@/lib/quota-store";
+import { FREE_LIMIT, PRO_LIMIT, PRO_PLUS_LIMIT } from "@/lib/quota-store";
 
 export async function GET(req: Request) {
   try {
@@ -27,37 +27,26 @@ export async function GET(req: Request) {
           currentLimit = profile.plan === 'pro' ? PRO_LIMIT : PRO_PLUS_LIMIT;
         }
       }
-
-      // Читаем квоту из базы
-      const { data: quotaData } = await supabase
-        .from('user_quotas')
-        .select('*')
-        .eq('user_id', user.id)
-        .maybeSingle();
-
-      if (!quotaData || new Date(quotaData.reset_at) < new Date()) {
-        return NextResponse.json({ used: 0, limit: currentLimit, remaining: currentLimit, plan: planName });
-      }
-
-      return NextResponse.json({
-        used: quotaData.count,
-        limit: currentLimit,
-        remaining: Math.max(0, currentLimit - quotaData.count),
-        plan: planName
-      });
     }
 
-    // Для гостей — из памяти
-    const now = Date.now();
-    let userQuota = quotaStore.get(ip);
-    if (!userQuota || now > userQuota.resetAt) {
+    // Ищем квоту (по user_id или по IP)
+    let query = supabase.from('user_quotas').select('*');
+    if (user) {
+      query = query.eq('user_id', user.id);
+    } else {
+      query = query.eq('ip_address', ip);
+    }
+
+    const { data: quotaData } = await query.maybeSingle();
+
+    if (!quotaData || new Date(quotaData.reset_at) < new Date()) {
       return NextResponse.json({ used: 0, limit: currentLimit, remaining: currentLimit, plan: planName });
     }
 
     return NextResponse.json({
-      used: userQuota.count,
+      used: quotaData.count,
       limit: currentLimit,
-      remaining: Math.max(0, currentLimit - userQuota.count),
+      remaining: Math.max(0, currentLimit - quotaData.count),
       plan: planName
     });
   } catch (error) {
