@@ -19,6 +19,18 @@ import { useQuota } from "@/context/QuotaProvider";
 import { cn } from "@/lib/utils";
 import { useRouter } from "next/navigation";
 
+// Хелпер для безопасного извлечения текста ошибки
+function parseError(err: any): string {
+  if (typeof err === "string") return err;
+  if (err instanceof Error) return err.message;
+  if (err && typeof err === "object") {
+    if (typeof err.message === "string") return err.message;
+    if (typeof err.error === "string") return err.error;
+    return JSON.stringify(err);
+  }
+  return "Неизвестная ошибка";
+}
+
 export function Improver() {
   const { showToast } = useToast();
   const { addReward } = useGamification();
@@ -77,20 +89,19 @@ export function Improver() {
         body: JSON.stringify({ prompt, mode }),
       });
       
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
       
       if (!res.ok) {
         if (res.status === 429) {
           setIsPromoOpen(true);
           throw new Error("limit_reached");
         }
-        throw new Error(data.error || "Ошибка оптимизации");
+        throw new Error(parseError(data));
       }
 
       setPrompt(data.improvedPrompt);
       showToast(`Промпт улучшен! Новая оценка: ${data.score}/100`, "success");
       
-      // ОБНОВЛЯЕМ ЛИМИТ НА КЛИЕНТЕ
       if (data.quota) {
         setQuota(data.quota);
       }
@@ -99,7 +110,9 @@ export function Improver() {
       
     } catch (err: any) {
       if (err.message !== "limit_reached") {
-        showToast(err.message, "error");
+        const msg = parseError(err);
+        setError(msg);
+        showToast(msg, "error");
       }
     } finally {
       setIsOptimizing(false);
@@ -141,7 +154,7 @@ export function Improver() {
           throw new Error("limit_reached");
         }
         if (data?.quota) setQuota(data.quota);
-        throw new Error(data?.error ?? `Ошибка ${response.status}`);
+        throw new Error(parseError(data));
       }
 
       const reader = response.body.getReader();
@@ -175,7 +188,7 @@ export function Improver() {
           } else if (event === "done") {
             const finalScore = data.scoreAfter as ScoreResult;
             setScoreAfter(finalScore);
-            if (data.quota) setQuota(data.quota as any); // Обновляем лимит
+            if (data.quota) setQuota(data.quota as any);
             
             addReward(10); 
             if (finalScore.score === 100) addReward(50, "perfect_score");
@@ -183,14 +196,15 @@ export function Improver() {
             
             await saveHistory({ prompt, improved: finalImproved, mode });
           } else if (event === "error") {
-            setError(data.message as string);
-            showToast(data.message as string, "error");
+            const msg = parseError(data);
+            setError(msg);
+            showToast(msg, "error");
           }
         }
       }
     } catch (err) {
       if ((err as Error).name !== "AbortError" && (err as Error).message !== "limit_reached") {
-        const msg = err instanceof Error ? err.message : "Ошибка";
+        const msg = parseError(err);
         setError(msg);
         showToast(msg, "error");
       }
@@ -219,10 +233,10 @@ export function Improver() {
         body: JSON.stringify({ prompt, improved, mode }) 
       });
       
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
       
       if (!res.ok) {
-        throw new Error(data.error || "Ошибка при создании ссылки");
+        throw new Error(parseError(data));
       }
 
       if (data.url) {
@@ -233,7 +247,7 @@ export function Improver() {
         setTimeout(() => setShareLink(null), 3000);
       }
     } catch (err: any) {
-      showToast(err.message, "error");
+      showToast(parseError(err), "error");
     } finally {
       setIsSharing(false);
     }
