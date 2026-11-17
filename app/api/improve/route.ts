@@ -1,7 +1,7 @@
 // app/api/improve/route.ts
 import { getGigaChatClient, hasGigaChatKey } from "@/lib/llm-client";
 import { scorePrompt } from "@/lib/scoring";
-import { sanitizePrompt } from "@/lib/security";
+import { checkRateLimit, sanitizePrompt } from "@/lib/security";
 import { FREE_LIMIT, PRO_LIMIT, PRO_PLUS_LIMIT } from "@/lib/quota-store";
 import { createClient } from "@/lib/supabase/server";
 
@@ -11,6 +11,12 @@ export async function POST(req: Request) {
   try {
     const ip = req.headers.get("x-forwarded-for") || "anonymous";
     
+    // Защита от спама (запросов в минуту)
+    const isAllowed = checkRateLimit(ip, process.env.NODE_ENV === "development" ? 50 : 5, 60000);
+    if (!isAllowed) {
+      return new Response(JSON.stringify({ error: "Слишком много запросов. Подождите минуту." }), { status: 429 });
+    }
+
     const body = await req.json().catch(() => null);
     if (!body) return new Response(JSON.stringify({ error: "Неверный формат" }), { status: 400 });
 
@@ -52,7 +58,7 @@ export async function POST(req: Request) {
     const now = new Date();
     let currentQuotaInfo = { used: 0, limit: currentLimit, remaining: currentLimit, disabled: false, plan: planName };
 
-    // Определяем, как искать квоту (по user_id или по IP)
+    // Ищем квоту (по user_id или по IP)
     let query = supabase.from('user_quotas').select('*');
     if (user) {
       query = query.eq('user_id', user.id);

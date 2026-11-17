@@ -1,4 +1,4 @@
-// app/api/optimize/route.ts
+﻿// app/api/optimize/route.ts
 import { NextResponse } from "next/server";
 import { getGigaChatClient, hasGigaChatKey } from "@/lib/llm-client";
 import { scorePrompt } from "@/lib/scoring";
@@ -26,6 +26,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "LLM ключ не настроен" }, { status: 500 });
     }
 
+    // --- ПРОВЕРКА ПОДПИСКИ ---
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
     
@@ -52,6 +53,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Функция доступна только на тарифе Pro" }, { status: 403 });
     }
 
+    // --- ПРОВЕРКА ЛИМИТОВ ---
     const now = new Date();
     let currentQuotaInfo = { used: 0, limit: currentLimit, remaining: currentLimit, disabled: false, plan: planName };
 
